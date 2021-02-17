@@ -5,31 +5,74 @@ import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol"; // for WETH
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "./TokenTransfer.sol";
 import "./IAllocation.sol";
+import "./utils/ReentrancyGuard.sol";
 
-contract LaunchPad is Ownable, TokenTransfer {
+contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
     struct TokenSale {
         address token;
         address tokenOwner;
+        address payable fundRecipient;
         uint256 totalSale;
         uint256 totalSold;
         uint256 saleStart;
         uint256 saleEnd;
-        uint256 lockPercent;
         uint256 ethPegged; //in usd decimal 6
         uint256 tokenPrice; //in usd decimal 6
+        uint256[] vestingTimes;
+        uint256[] vestingPercents;
+        uint256 unlockImmediatePercent;
     }
+
+    struct UserInfo {
+        uint256 alloc;
+        uint256 bought;
+        bool[] vestingPaids; //array length must be equal to length of vestingPercents
+    }
+
+    address public launchPadFund;
+    uint256 public launchPadPercent;
     address[] public tokenList;
     //a token can have multiple sale: private, public ...
     mapping(address => uint256[]) public saleListForToken;
     mapping(address => bool) public allowedTokens;
+    //saleid=>address=>user info
+    mapping(uint256 => mapping(address => UserInfo)) public userInfo;
     TokenSale[] public allSales;
     IAllocation public allocation;
+    IERC20 public usdContract;
 
     modifier onlyTokenAllowed(address _token) {
         require(allowedTokens[_token], "!token not allowed");
         _;
+    }
+
+    modifier onlyTokenOwner(uint256 _saleId) {
+        require(allSales[_saleId].tokenOwner == msg.sender, "!token owner");
+        _;
+    }
+
+    modifier onlyValidTime(uint256 _saleId) {
+        require(
+            allSales[_saleId].saleStart <= block.timestamp &&
+                allSales[_saleId].saleEnd >= block.timestamp,
+            "toke sale not valid time"
+        );
+        _;
+    }
+
+    modifier onlyNotFullAlloc(uint256 _saleId) {
+        require(
+            userInfo[_saleId][msg.sender].alloc >
+                userInfo[_saleId][msg.sender].bought,
+            "already buy full alloc"
+        );
+        _;
+    }
+
+    function getAllSalesLength() public view returns (uint256) {
+        return allSales.length;
     }
 
     function setAllowedToken(address _token, bool _val) external onlyOwner {
@@ -40,19 +83,61 @@ contract LaunchPad is Ownable, TokenTransfer {
         allocation = IAllocation(_allocAddress);
     }
 
+    function setUsdContract(address _addr) external onlyOwner {
+        usdContract = IERC20(_addr);
+    }
+
+    function setLaunchPad(address _addr, uint256 _percent) external onlyOwner {
+        launchPadFund = _addr;
+        launchPadPercent = _percent;
+    }
+
+    function validateVestingConfig(
+        uint256 _unlockImmediatePercent,
+        uint256[] memory _vestingTimes,
+        uint256[] memory _vestingPercents
+    ) internal {
+        require(
+            _vestingTimes.length == _vestingPercents.length,
+            "invalid vesting"
+        );
+        uint256 _totalPercent = _unlockImmediatePercent;
+        for (uint256 i = 0; i < _vestingTimes.length; i++) {
+            if (i > 0) {
+                require(
+                    _vestingTimes[i] > _vestingTimes[i - 1],
+                    "invalid vesting time"
+                );
+            }
+            _totalPercent = _totalPercent.add(_vestingPercents[i]);
+        }
+        require(_totalPercent == 100, "invalid vesting percent");
+    }
+
     function depositTokenForSale(
         address _token,
+        address payable _fundRecipient,
         uint256 _amount,
         uint256 _start,
         uint256 _end,
-        uint256 _lockPercent,
         uint256 _ethPegged,
-        uint256 _tokenPrice
-    ) external onlyTokenAllowed(_token) {
-        require(
-            _end > _start && _start >= block.timestamp && _lockPercent <= 100,
-            "invalid params"
+        uint256 _tokenPrice,
+        uint256 _unlockImmediatePercent,
+        uint256[] memory _vestingTimes,
+        uint256[] memory _vestingPercents
+    ) external onlyTokenAllowed(_token) nonReentrant {
+        require(_end > _start && _start >= block.timestamp, "invalid params");
+        validateVestingConfig(
+            _unlockImmediatePercent,
+            _vestingTimes,
+            _vestingPercents
         );
+        if (_vestingTimes.length > 0) {
+            require(
+                _vestingTimes[0] > _end,
+                "cannot release before token sale end"
+            );
+        }
         safeTransferIn(_token, _amount);
         uint256 saleId = allSales.length;
         saleListForToken[_token].push(saleId);
@@ -60,13 +145,16 @@ contract LaunchPad is Ownable, TokenTransfer {
             TokenSale({
                 token: _token,
                 tokenOwner: msg.sender,
+                fundRecipient: _fundRecipient,
                 totalSale: _amount,
                 totalSold: 0,
                 saleStart: _start,
                 saleEnd: _end,
-                lockPercent: _lockPercent,
                 ethPegged: _ethPegged,
-                tokenPrice: _tokenPrice
+                tokenPrice: _tokenPrice,
+                vestingTimes: _vestingTimes,
+                vestingPercents: _vestingPercents,
+                unlockImmediatePercent: _unlockImmediatePercent
             })
         );
         if (saleListForToken[_token].length == 1) {
@@ -74,36 +162,105 @@ contract LaunchPad is Ownable, TokenTransfer {
         }
     }
 
-    function addMoreTokenForSale(uint256 _saleId, uint256 _amount) external {
+    function addMoreTokenForSale(uint256 _saleId, uint256 _amount)
+        external
+        nonReentrant
+        onlyTokenOwner(_saleId)
+    {
         require(block.timestamp <= allSales[_saleId].saleEnd, "sale finish");
         safeTransferIn(allSales[_saleId].token, _amount);
         allSales[_saleId].totalSale = allSales[_saleId].totalSale.add(_amount);
     }
 
-    function changeTokenSaleStart(uint256 _saleId, uint256 _start) external {
+    function changeTokenSaleStart(uint256 _saleId, uint256 _start)
+        external
+        onlyTokenOwner(_saleId)
+    {
         require(
-            allSales[_saleId].saleStart >= block.timestamp &&
-                _start >= block.timestamp &&
-                allSales[_saleId].tokenOwner == msg.sender,
+            allSales[_saleId].saleStart > block.timestamp &&
+                _start > block.timestamp,
             "sale already starts"
         );
         allSales[_saleId].saleStart = _start;
     }
 
-    function changeTokenSaleEnd(uint256 _saleId, uint256 _end) external {
-        require(allSales[_saleId].saleEnd <= _end, "sale already finish");
+    function changeTokenSaleEnd(uint256 _saleId, uint256 _end)
+        external
+        onlyTokenOwner(_saleId)
+    {
+        require(allSales[_saleId].saleEnd < _end, "sale already finish");
+        require(
+            allSales[_saleId].vestingTimes[0] > _end,
+            "cannot release before token sale end"
+        );
         allSales[_saleId].saleEnd = _end;
     }
 
-    function buyTokenWithEth(uint256 _saleId) external payable {}
+    function changeTokenSaleVesting(
+        uint256 _saleId,
+        uint256 _unlockImmediatePercent,
+        uint256[] memory _vestingTimes,
+        uint256[] memory _vestingPercents
+    ) external onlyTokenOwner(_saleId) {
+        require(
+            allSales[_saleId].saleStart > block.timestamp,
+            "sale already start"
+        );
+        allSales[_saleId].unlockImmediatePercent = _unlockImmediatePercent;
+        allSales[_saleId].vestingTimes = _vestingTimes;
+        allSales[_saleId].vestingPercents = _vestingPercents;
+    }
 
-    function buyTokenWithUsdt(uint256 _saleId, uint256 _usdtAmount)
+    function changeFundRecipient(uint256 _saleId, address payable _recipient)
+        external
+        onlyTokenOwner(_saleId)
+    {
+        allSales[_saleId].fundRecipient = _recipient;
+    }
+
+    function buyTokenWithEth(uint256 _saleId)
         external
         payable
+        nonReentrant
+        onlyValidTime(_saleId)
+        onlyNotFullAlloc(_saleId)
     {}
 
-    function getAllSales() external view returns (TokenSale[] memory) {
-        return allSales;
+    function buyTokenWithUsd(uint256 _saleId, uint256 _usdtAmount)
+        external
+        payable
+        nonReentrant
+        onlyValidTime(_saleId)
+        onlyNotFullAlloc(_saleId)
+    {}
+
+    function getSaleById(uint256 _saleId)
+        external
+        view
+        returns (
+            address token,
+            address tokenOwner,
+            uint256[6] memory infos,
+            uint256[] memory vestingTimes,
+            uint256[] memory vestingPercents,
+            uint256 unlockImmediatePercent
+        )
+    {
+        return (
+            allSales[_saleId].token,
+            allSales[_saleId].tokenOwner,
+            [
+                allSales[_saleId].totalSale,
+                allSales[_saleId].totalSold,
+                allSales[_saleId].saleStart,
+                allSales[_saleId].saleEnd,
+                allSales[_saleId].ethPegged,
+                allSales[_saleId].tokenPrice
+            ],
+            allSales[_saleId].vestingTimes,
+            allSales[_saleId].vestingPercents,
+            allSales[_saleId].unlockImmediatePercent
+        );
     }
 
     function getTokenList() external view returns (address[] memory) {
@@ -113,7 +270,7 @@ contract LaunchPad is Ownable, TokenTransfer {
     function getSaleListForToken(address _token)
         external
         view
-        returns (address[] memory)
+        returns (uint256[] memory)
     {
         return saleListForToken[_token];
     }

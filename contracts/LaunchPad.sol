@@ -7,6 +7,10 @@ import "./TokenTransfer.sol";
 import "./IAllocation.sol";
 import "./utils/ReentrancyGuard.sol";
 
+interface IDecimal {
+    function decimals() external view returns (uint8);
+}
+
 contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
@@ -76,6 +80,8 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
     }
 
     function setAllowedToken(address _token, bool _val) external onlyOwner {
+        require(IDecimal(_token).decimals() == 18, "!decimal 18");
+        require(IERC20(_token).totalSupply() > 0, "!decimal 18");
         allowedTokens[_token] = _val;
     }
 
@@ -218,13 +224,64 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
         allSales[_saleId].fundRecipient = _recipient;
     }
 
+
+    //eth or bnb
     function buyTokenWithEth(uint256 _saleId)
         external
         payable
         nonReentrant
         onlyValidTime(_saleId)
         onlyNotFullAlloc(_saleId)
-    {}
+    {
+        uint256 calculatedAmount = msg.value.mul(allSales[_saleId].ethPegged).div(allSales[_saleId].tokenPrice);
+        UserInfo storage user = userInfo[_saleId][msg.sender];
+        uint256 returnedEth = 0;
+        if (user.bought.add(calculatedAmount) > user.alloc) {
+            calculatedAmount = user.alloc.sub(user.bought);
+            uint256 actualSpent = calculatedAmount.mul(allSales[_saleId].tokenPrice).div(allSales[_saleId].ethPegged);
+            returnedEth = msg.value.sub(actualSpent);
+        }
+        if (returnedEth > 0) {
+            msg.sender.transfer(returnedEth);
+        }
+
+        if (allSales[_saleId].unlockImmediatePercent > 0) {
+            payTokenImmediate(msg.sender, _saleId, calculatedAmount.mul(allSales[_saleId].unlockImmediatePercent).div(100));
+        }
+
+        //add vestings
+        if (user.vestingPaids.length == 0) {
+            user.vestingPaids = new bool[](allSales[_saleId].vestingPercents.length);
+        }
+    }
+
+    function payTokenImmediate(address _to, uint256 _saleId, uint256 _amount) internal {
+        safeTransferOut(allSales[_saleId].token, _to, _amount);
+    }
+
+    function getUnlockableToken(address _to, uint256 _saleId) public view returns (uint256) {
+        uint256 ret = 0;
+        UserInfo storage user = userInfo[_saleId][_to];
+        for(uint256 i = 0; i < allSales[_saleId].vestingTimes.length; i++) {
+            if (allSales[_saleId].vestingTimes[i] < block.timestamp && !user.vestingPaids[i]) {
+                ret = ret.add(allSales[_saleId].vestingPercents[i].mul(user.bought).div(100));
+            }
+        }
+        return ret;
+    }
+
+    function payVestingToken(address _to, uint256 _saleId) public {
+        UserInfo storage user = userInfo[_saleId][_to];
+        uint256 ret = 0;
+        for(uint256 i = 0; i < allSales[_saleId].vestingTimes.length; i++) {
+            if (allSales[_saleId].vestingTimes[i] < block.timestamp && !user.vestingPaids[i]) {
+                uint256 amount = allSales[_saleId].vestingPercents[i].mul(user.bought).div(100);
+                ret = ret.add(amount);
+                user.vestingPaids[i] = true;
+            }
+        }
+        IERC20(allSales[_saleId].token).safeTransfer(_to, ret);
+    }
 
     function buyTokenWithUsd(uint256 _saleId, uint256 _usdtAmount)
         external
@@ -232,7 +289,9 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
         nonReentrant
         onlyValidTime(_saleId)
         onlyNotFullAlloc(_saleId)
-    {}
+    {
+        revert();
+    }
 
     function getSaleById(uint256 _saleId)
         external

@@ -235,6 +235,7 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
     {
         uint256 calculatedAmount = msg.value.mul(allSales[_saleId].ethPegged).div(allSales[_saleId].tokenPrice);
         UserInfo storage user = userInfo[_saleId][msg.sender];
+        user.alloc = allocation.getAllocation(allSales[_saleId].token, _saleId);
         uint256 returnedEth = 0;
         if (user.bought.add(calculatedAmount) > user.alloc) {
             calculatedAmount = user.alloc.sub(user.bought);

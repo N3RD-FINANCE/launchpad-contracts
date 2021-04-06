@@ -9,7 +9,7 @@ contract FlatAllocation is IAllocation, Ownable {
 	}
 
 	function getAllocation(address _token, uint256 _saleId)
-        external
+        external override
         view
         returns (uint256) {
 		return allocation;

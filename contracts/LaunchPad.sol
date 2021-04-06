@@ -14,6 +14,10 @@ interface IDecimal {
 contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
+
+    //Vesting is added before some token is unlocked, basically nerd team should receive token from tokensale team
+    //then nerd team add a new vesting to the token sale
+    //users then call unlockToken function
     struct TokenSale {
         address token;
         address tokenOwner;
@@ -24,15 +28,15 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
         uint256 saleEnd;
         uint256 ethPegged; //in usd decimal 6
         uint256 tokenPrice; //in usd decimal 6
-        uint256[] vestingTimes;
-        uint256[] vestingPercents;
-        uint256 unlockImmediatePercent;
+        uint256[] vestingAmounts; //token vesting array => contain token percentage
+        uint256[] vestingPercentsX10; //token vesting array => contain token percentage
+        uint256[] vestingClaimeds; //token vesting array => contain token percentage
     }
 
     struct UserInfo {
         uint256 alloc;
         uint256 bought;
-        bool[] vestingPaids; //array length must be equal to length of vestingPercents
+        uint256 vestingPaidCount;   //count of vestings paid 
     }
 
     address public launchPadFund;
@@ -98,89 +102,72 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
         launchPadPercent = _percent;
     }
 
-    function validateVestingConfig(
-        uint256 _unlockImmediatePercent,
-        uint256[] memory _vestingTimes,
-        uint256[] memory _vestingPercents
-    ) internal {
-        require(
-            _vestingTimes.length == _vestingPercents.length,
-            "invalid vesting"
-        );
-        uint256 _totalPercent = _unlockImmediatePercent;
-        for (uint256 i = 0; i < _vestingTimes.length; i++) {
-            if (i > 0) {
-                require(
-                    _vestingTimes[i] > _vestingTimes[i - 1],
-                    "invalid vesting time"
-                );
-            }
-            _totalPercent = _totalPercent.add(_vestingPercents[i]);
-        }
-        require(_totalPercent == 100, "invalid vesting percent");
-    }
+    // function validateVestingConfig(
+    //     uint256 _unlockImmediatePercent,
+    //     uint256[] memory _vestingTimes,
+    //     uint256[] memory _vestingPercents
+    // ) internal {
+    //     require(
+    //         _vestingTimes.length == _vestingPercents.length,
+    //         "invalid vesting"
+    //     );
+    //     uint256 _totalPercent = _unlockImmediatePercent;
+    //     for (uint256 i = 0; i < _vestingTimes.length; i++) {
+    //         if (i > 0) {
+    //             require(
+    //                 _vestingTimes[i] > _vestingTimes[i - 1],
+    //                 "invalid vesting time"
+    //             );
+    //         }
+    //         _totalPercent = _totalPercent.add(_vestingPercents[i]);
+    //     }
+    //     require(_totalPercent == 100, "invalid vesting percent");
+    // }
 
-    function depositTokenForSale(
+    function createTokenSale(
         address _token,
         address payable _fundRecipient,
         uint256 _amount,
         uint256 _start,
         uint256 _end,
         uint256 _ethPegged,
-        uint256 _tokenPrice,
-        uint256 _unlockImmediatePercent,
-        uint256[] memory _vestingTimes,
-        uint256[] memory _vestingPercents
-    ) external onlyTokenAllowed(_token) nonReentrant {
+        uint256 _tokenPrice
+    ) external onlyTokenAllowed(_token) nonReentrant onlyOwner {
         require(_end > _start && _start >= block.timestamp, "invalid params");
-        validateVestingConfig(
-            _unlockImmediatePercent,
-            _vestingTimes,
-            _vestingPercents
-        );
-        if (_vestingTimes.length > 0) {
-            require(
-                _vestingTimes[0] > _end,
-                "cannot release before token sale end"
-            );
-        }
-        safeTransferIn(_token, _amount);
+
         uint256 saleId = allSales.length;
         saleListForToken[_token].push(saleId);
-        allSales.push(
-            TokenSale({
-                token: _token,
-                tokenOwner: msg.sender,
-                fundRecipient: _fundRecipient,
-                totalSale: _amount,
-                totalSold: 0,
-                saleStart: _start,
-                saleEnd: _end,
-                ethPegged: _ethPegged,
-                tokenPrice: _tokenPrice,
-                vestingTimes: _vestingTimes,
-                vestingPercents: _vestingPercents,
-                unlockImmediatePercent: _unlockImmediatePercent
-            })
-        );
+        
+        TokenSale memory sale;
+        sale.token = _token;
+        sale.tokenOwner = msg.sender;
+        sale.fundRecipient = _fundRecipient;
+        sale.totalSale = _amount;
+        sale.totalSold = 0;
+        sale.saleStart = _start;
+        sale.saleEnd = _end;
+        sale.ethPegged = _ethPegged;
+        sale.tokenPrice = _tokenPrice;
+
+        allSales.push(sale);
+
         if (saleListForToken[_token].length == 1) {
             tokenList.push(_token);
         }
     }
 
-    function addMoreTokenForSale(uint256 _saleId, uint256 _amount)
+    function changeTotalSale(uint256 _saleId, uint256 _totalSale)
         external
         nonReentrant
-        onlyTokenOwner(_saleId)
+        onlyOwner
     {
         require(block.timestamp <= allSales[_saleId].saleEnd, "sale finish");
-        safeTransferIn(allSales[_saleId].token, _amount);
-        allSales[_saleId].totalSale = allSales[_saleId].totalSale.add(_amount);
+        allSales[_saleId].totalSale = _totalSale;
     }
 
     function changeTokenSaleStart(uint256 _saleId, uint256 _start)
         external
-        onlyTokenOwner(_saleId)
+        onlyOwner
     {
         require(
             allSales[_saleId].saleStart > block.timestamp &&
@@ -192,11 +179,11 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
 
     function changeTokenSaleEnd(uint256 _saleId, uint256 _end)
         external
-        onlyTokenOwner(_saleId)
+        onlyOwner
     {
         require(allSales[_saleId].saleEnd < _end, "sale already finish");
         require(
-            allSales[_saleId].vestingTimes[0] > _end,
+            block.timestamp <= _end,
             "cannot release before token sale end"
         );
         allSales[_saleId].saleEnd = _end;
@@ -204,24 +191,29 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
 
     function changeTokenSaleVesting(
         uint256 _saleId,
-        uint256 _unlockImmediatePercent,
-        uint256[] memory _vestingTimes,
-        uint256[] memory _vestingPercents
-    ) external onlyTokenOwner(_saleId) {
-        require(
-            allSales[_saleId].saleStart > block.timestamp,
-            "sale already start"
-        );
-        allSales[_saleId].unlockImmediatePercent = _unlockImmediatePercent;
-        allSales[_saleId].vestingTimes = _vestingTimes;
-        allSales[_saleId].vestingPercents = _vestingPercents;
+        uint256 _vestingIdx,
+        uint256 _amount,
+        uint256 _percentX10
+    ) external onlyOwner {
+        allSales[_saleId].vestingAmounts[_vestingIdx] = _amount;
+        allSales[_saleId].vestingPercentsX10[_vestingIdx] = _percentX10;
     }
 
     function changeFundRecipient(uint256 _saleId, address payable _recipient)
         external
-        onlyTokenOwner(_saleId)
+        onlyOwner
     {
         allSales[_saleId].fundRecipient = _recipient;
+    }
+
+    function addVesting(uint256 _saleId, uint256 _amount, uint256 _percentX10, bool _transferToken) public onlyOwner {
+        allSales[_saleId].vestingAmounts.push(_amount);
+        allSales[_saleId].vestingPercentsX10.push(_percentX10);
+        allSales[_saleId].vestingClaimeds.push(0);
+
+        if (_transferToken) {
+            safeTransferIn(allSales[_saleId].token, _amount);
+        }
     }
 
 
@@ -246,42 +238,31 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
             msg.sender.transfer(returnedEth);
         }
 
-        if (allSales[_saleId].unlockImmediatePercent > 0) {
-            payTokenImmediate(msg.sender, _saleId, calculatedAmount.mul(allSales[_saleId].unlockImmediatePercent).div(100));
-        }
-
-        //add vestings
-        if (user.vestingPaids.length == 0) {
-            user.vestingPaids = new bool[](allSales[_saleId].vestingPercents.length);
-        }
+        claimVestingToken(_saleId, msg.sender);
     }
 
-    function payTokenImmediate(address _to, uint256 _saleId, uint256 _amount) internal {
-        safeTransferOut(allSales[_saleId].token, _to, _amount);
-    }
-
-    function getUnlockableToken(address _to, uint256 _saleId) public view returns (uint256) {
+    function getUnlockableAmount(address _to, uint256 _saleId) public view returns (uint256) {
         uint256 ret = 0;
         UserInfo storage user = userInfo[_saleId][_to];
-        for(uint256 i = 0; i < allSales[_saleId].vestingTimes.length; i++) {
-            if (allSales[_saleId].vestingTimes[i] < block.timestamp && !user.vestingPaids[i]) {
-                ret = ret.add(allSales[_saleId].vestingPercents[i].mul(user.bought).div(100));
-            }
+        for(uint256 i = user.vestingPaidCount; i < allSales[_saleId].vestingAmounts.length; i++) {
+            uint256 toUnlock = allSales[_saleId].vestingPercentsX10[i].mul(user.bought).div(1000);
+            ret = ret.add(toUnlock);
         }
         return ret;
     }
 
-    function payVestingToken(address _to, uint256 _saleId) public {
+    function claimVestingToken(uint256 _saleId, address _to) public {
         UserInfo storage user = userInfo[_saleId][_to];
+        require(user.bought > 0, "nothing to claim");
+        require(user.vestingPaidCount < allSales[_saleId].vestingAmounts.length, "already claim");
         uint256 ret = 0;
-        for(uint256 i = 0; i < allSales[_saleId].vestingTimes.length; i++) {
-            if (allSales[_saleId].vestingTimes[i] < block.timestamp && !user.vestingPaids[i]) {
-                uint256 amount = allSales[_saleId].vestingPercents[i].mul(user.bought).div(100);
-                ret = ret.add(amount);
-                user.vestingPaids[i] = true;
-            }
+        for(uint256 i = user.vestingPaidCount; i < allSales[_saleId].vestingAmounts.length; i++) {
+            uint256 toUnlock = allSales[_saleId].vestingPercentsX10[i].mul(user.bought).div(1000);
+            ret = ret.add(toUnlock);
+            allSales[_saleId].vestingClaimeds[i] = allSales[_saleId].vestingClaimeds[i].add(toUnlock);
         }
-        IERC20(allSales[_saleId].token).safeTransfer(_to, ret);
+        user.vestingPaidCount = allSales[_saleId].vestingAmounts.length;
+        safeTransferOut(allSales[_saleId].token, _to, ret);
     }
 
     function buyTokenWithUsd(uint256 _saleId, uint256 _usdtAmount)
@@ -301,11 +282,21 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
             address token,
             address tokenOwner,
             uint256[6] memory infos,
-            uint256[] memory vestingTimes,
-            uint256[] memory vestingPercents,
-            uint256 unlockImmediatePercent
+            uint256[] memory vestingAmounts,
+            uint256[] memory vestingPercentsX10,
+            uint256[] memory vestingClaimeds
         )
     {
+        uint256 vestingsLength = allSales[_saleId].vestingAmounts.length;
+        vestingAmounts = new uint256[](vestingsLength);
+        vestingPercentsX10 = new uint256[](vestingsLength);
+        vestingClaimeds = new uint256[](vestingsLength);
+
+        for(uint256 i = 0; i < vestingsLength; i++) {
+            vestingAmounts[i] = allSales[_saleId].vestingAmounts[i];
+            vestingPercentsX10[i] = allSales[_saleId].vestingPercentsX10[i];
+            vestingClaimeds[i] = allSales[_saleId].vestingClaimeds[i];
+        }
         return (
             allSales[_saleId].token,
             allSales[_saleId].tokenOwner,
@@ -317,9 +308,9 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
                 allSales[_saleId].ethPegged,
                 allSales[_saleId].tokenPrice
             ],
-            allSales[_saleId].vestingTimes,
-            allSales[_saleId].vestingPercents,
-            allSales[_saleId].unlockImmediatePercent
+            vestingAmounts,
+            vestingPercentsX10,
+            vestingClaimeds
         );
     }
 

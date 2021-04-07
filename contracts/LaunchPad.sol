@@ -20,8 +20,7 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
     //users then call unlockToken function
     struct TokenSale {
         address token;
-        address tokenOwner;
-        address payable fundRecipient;
+        address payable tokenOwner;
         uint256 totalSale;
         uint256 totalSold;
         uint256 saleStart;
@@ -70,13 +69,8 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
         _;
     }
 
-    modifier onlyNotFullAlloc(uint256 _saleId) {
-        require(
-            userInfo[_saleId][msg.sender].alloc >
-                userInfo[_saleId][msg.sender].bought,
-            "already buy full alloc"
-        );
-        _;
+    function isFullAlloc(address _user, uint256 _saleId) public view returns (bool) {
+        return userInfo[_saleId][msg.sender].alloc <= userInfo[_saleId][msg.sender].bought;
     }
 
     function getAllSalesLength() public view returns (uint256) {
@@ -126,7 +120,7 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
 
     function createTokenSale(
         address _token,
-        address payable _fundRecipient,
+        address payable _tokenOwner,
         uint256 _amount,
         uint256 _start,
         uint256 _end,
@@ -140,8 +134,7 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
         
         TokenSale memory sale;
         sale.token = _token;
-        sale.tokenOwner = msg.sender;
-        sale.fundRecipient = _fundRecipient;
+        sale.tokenOwner = _tokenOwner;
         sale.totalSale = _amount;
         sale.totalSold = 0;
         sale.saleStart = _start;
@@ -199,21 +192,28 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
         allSales[_saleId].vestingPercentsX10[_vestingIdx] = _percentX10;
     }
 
-    function changeFundRecipient(uint256 _saleId, address payable _recipient)
+    function changeFundRecipient(uint256 _saleId, address payable _tokenOwner)
         external
         onlyOwner
     {
-        allSales[_saleId].fundRecipient = _recipient;
+        allSales[_saleId].tokenOwner = _tokenOwner;
     }
 
-    function addVesting(uint256 _saleId, uint256 _amount, uint256 _percentX10, bool _transferToken) public onlyOwner {
+    function addVesting(uint256 _saleId, uint256 _percentX10) public onlyOwner {
+        //only add vesting if sale finishes
+        require(allSales[_saleId].saleEnd < block.timestamp, "Sales not finished yet");
+        require(_percentX10 <= 1000, "percent too high");
+        uint256 _amount = allSales[_saleId].totalSold.mul(_percentX10).div(1000);
+        
+        safeTransferIn(allSales[_saleId].token, _amount);
         allSales[_saleId].vestingAmounts.push(_amount);
         allSales[_saleId].vestingPercentsX10.push(_percentX10);
         allSales[_saleId].vestingClaimeds.push(0);
-
-        if (_transferToken) {
-            safeTransferIn(allSales[_saleId].token, _amount);
+        uint256 percentSum = 0;
+        for(uint256 i = 0; i < allSales[_saleId].vestingPercentsX10.length; i++) {
+            percentSum = percentSum.add(allSales[_saleId].vestingPercentsX10[i]);
         }
+        require(percentSum <= 1000, "Percent total too high");
     }
 
 
@@ -223,22 +223,25 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
         payable
         nonReentrant
         onlyValidTime(_saleId)
-        onlyNotFullAlloc(_saleId)
     {
         uint256 calculatedAmount = msg.value.mul(allSales[_saleId].ethPegged).div(allSales[_saleId].tokenPrice);
         UserInfo storage user = userInfo[_saleId][msg.sender];
-        user.alloc = allocation.getAllocation(allSales[_saleId].token, _saleId);
+        user.alloc = allocation.getAllocation(msg.sender, allSales[_saleId].token, _saleId);
+        require(!isFullAlloc(msg.sender, _saleId), "buy over alloc");
         uint256 returnedEth = 0;
+        uint256 actualSpent = msg.value;
         if (user.bought.add(calculatedAmount) > user.alloc) {
             calculatedAmount = user.alloc.sub(user.bought);
-            uint256 actualSpent = calculatedAmount.mul(allSales[_saleId].tokenPrice).div(allSales[_saleId].ethPegged);
+            actualSpent = calculatedAmount.mul(allSales[_saleId].tokenPrice).div(allSales[_saleId].ethPegged);
             returnedEth = msg.value.sub(actualSpent);
         }
         if (returnedEth > 0) {
             msg.sender.transfer(returnedEth);
         }
-
-        claimVestingToken(_saleId, msg.sender);
+        allSales[_saleId].tokenOwner.transfer(actualSpent);
+        user.bought = user.bought.add(calculatedAmount);
+        allSales[_saleId].totalSold = allSales[_saleId].totalSold.add(calculatedAmount);
+        //claimVestingToken(_saleId, msg.sender);
     }
 
     function getUnlockableAmount(address _to, uint256 _saleId) public view returns (uint256) {
@@ -251,7 +254,7 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
         return ret;
     }
 
-    function claimVestingToken(uint256 _saleId, address _to) public {
+    function claimVestingToken(uint256 _saleId, address _to) public nonReentrant {
         UserInfo storage user = userInfo[_saleId][_to];
         require(user.bought > 0, "nothing to claim");
         require(user.vestingPaidCount < allSales[_saleId].vestingAmounts.length, "already claim");
@@ -270,7 +273,6 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
         payable
         nonReentrant
         onlyValidTime(_saleId)
-        onlyNotFullAlloc(_saleId)
     {
         revert();
     }
@@ -324,5 +326,9 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
         returns (uint256[] memory)
     {
         return saleListForToken[_token];
+    }
+
+    function salesLength() external view returns (uint256) {
+        return allSales.length;
     }
 }

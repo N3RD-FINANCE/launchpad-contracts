@@ -331,4 +331,8 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
     function salesLength() external view returns (uint256) {
         return allSales.length;
     }
+
+    function getSaleTokenByID(uint256 _saleId) external view returns (address) {
+        return allSales[_saleId].token;
+    }
 }

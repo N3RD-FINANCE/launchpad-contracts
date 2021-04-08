@@ -91,6 +91,22 @@ contract WhiteList is Ownable {
         }
     }
 
+    function getAllFarmStakeState(uint256 _saleId) public view returns (address[] memory users, uint256[] memory farmeds, uint256[] memory stakeds) {
+        users = whiteListeds[_saleId];
+        farmeds = new uint256[](users.length);
+        stakeds = new uint256[](users.length);
+        for(uint256 m = 0; m < users.length; m++) {
+            address _user = users[m];
+            SnapshotInfo storage info = userInfoSnapshot[_saleId][_user];
+            stakeds[m] = info.nerdStakedAmount;
+            uint256 farmed = 0;
+            for(uint256 i = 0; i < info.nerdFarmedAmount.length; i++) {
+                farmed = farmed.add(info.nerdFarmedAmount[i]);
+            }
+            farmeds[m] = farmed;
+        }
+    }
+
     function getWhitelisteds(uint256 _saleId) external view returns (address[] memory) {
         return whiteListeds[_saleId];
     }

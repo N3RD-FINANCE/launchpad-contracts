@@ -1,10 +1,10 @@
 pragma solidity ^0.6.12;
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol"; // for WETH
-import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol"; // for WETH
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol"; 
+import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol"; 
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "./TokenTransfer.sol";
-import "./IAllocation.sol";
+import "./interfaces/IAllocation.sol";
 import "./utils/ReentrancyGuard.sol";
 
 interface IDecimal {
@@ -30,6 +30,7 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
         uint256[] vestingAmounts; //token vesting array => contain token percentage
         uint256[] vestingPercentsX10; //token vesting array => contain token percentage
         uint256[] vestingClaimeds; //token vesting array => contain token percentage
+        IAllocation allocation;
     }
 
     struct UserInfo {
@@ -47,7 +48,6 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
     //saleid=>address=>user info
     mapping(uint256 => mapping(address => UserInfo)) public userInfo;
     TokenSale[] public allSales;
-    IAllocation public allocation;
     IERC20 public usdContract;
 
     modifier onlyTokenAllowed(address _token) {
@@ -83,8 +83,8 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
         allowedTokens[_token] = _val;
     }
 
-    function setAllocationAddress(address _allocAddress) external onlyOwner {
-        allocation = IAllocation(_allocAddress);
+    function setAllocationAddress(uint256 _saleId, address _allocAddress) public onlyOwner {
+        allSales[_saleId].allocation = IAllocation(_allocAddress);
     }
 
     function setUsdContract(address _addr) external onlyOwner {
@@ -126,7 +126,7 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
         uint256 _end,
         uint256 _ethPegged,
         uint256 _tokenPrice
-    ) external onlyTokenAllowed(_token) nonReentrant onlyOwner {
+    ) public onlyTokenAllowed(_token) nonReentrant onlyOwner {
         require(_end > _start && _start >= block.timestamp, "invalid params");
 
         uint256 saleId = allSales.length;
@@ -147,6 +147,20 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
         if (saleListForToken[_token].length == 1) {
             tokenList.push(_token);
         }
+    }
+
+    function createTokenSaleWithAllocation(
+        address _token,
+        address payable _tokenOwner,
+        uint256 _amount,
+        uint256 _start,
+        uint256 _end,
+        uint256 _ethPegged,
+        uint256 _tokenPrice,
+        address _allocationContract
+    ) public onlyTokenAllowed(_token) nonReentrant onlyOwner {
+        createTokenSale(_token, _tokenOwner, _amount, _start, _end, _ethPegged, _tokenPrice);
+        setAllocationAddress(allSales.length - 1, _allocationContract);
     }
 
     function changeTotalSale(uint256 _saleId, uint256 _totalSale)
@@ -226,7 +240,7 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
     {
         uint256 calculatedAmount = msg.value.mul(allSales[_saleId].ethPegged).div(allSales[_saleId].tokenPrice);
         UserInfo storage user = userInfo[_saleId][msg.sender];
-        user.alloc = allocation.getAllocation(msg.sender, allSales[_saleId].token, _saleId);
+        user.alloc = allSales[_saleId].allocation.getAllocation(msg.sender, allSales[_saleId].token, allSales[_saleId].totalSale, _saleId);
         require(!isFullAlloc(msg.sender, _saleId), "buy over alloc");
         uint256 returnedEth = 0;
         uint256 actualSpent = msg.value;
@@ -341,5 +355,9 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
 
     function getSaleTokenByID(uint256 _saleId) external view returns (address) {
         return allSales[_saleId].token;
+    }
+
+    function getSaleTimeFrame(uint256 _saleId) external view returns (uint256, uint256) {
+        return (allSales[_saleId].saleStart, allSales[_saleId].saleEnd);
     }
 }

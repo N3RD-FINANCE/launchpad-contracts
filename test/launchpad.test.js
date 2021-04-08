@@ -40,7 +40,7 @@ contract('Launchpad Test', (accounts) => {
 
 	it('Flat allocation', async () => {
 		this.flatAlloc = await FlatAllocation.new(toWei(1000));
-		await this.launchpad.setAllocationAddress(this.flatAlloc.address, {from: deployer});
+		await this.launchpad.setAllocationAddress(0, this.flatAlloc.address, {from: deployer});
 
 		let tokenOwnerBalBefore = (await web3.eth.getBalance(fundRecipient)).valueOf().toString();
 		await this.launchpad.buyTokenWithEth(0, {from: users[0], value: toWei(0.5)});

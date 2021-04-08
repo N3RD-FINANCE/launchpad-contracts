@@ -24,6 +24,9 @@ contract LinearAllocation is IAllocation, Ownable {
         }
 
 		uint256 userPoint = farmed*2 + staked;
+		if (userPoint > 100e18) {
+            userPoint = 100e18; //capped at 100 nerd
+        }
 		return userPoint.mul(_totalSale).div(total);
 	}
 

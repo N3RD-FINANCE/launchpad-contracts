@@ -73,9 +73,13 @@ contract WhiteList is Ownable {
         }
 
         userInfoSnapshot[_saleId][msg.sender].sumOfNerdFarmedAmount = newSumNerdFarmed;
-
+        uint256 userNewPoint = userInfoSnapshot[_saleId][msg.sender].nerdStakedAmount.add(userInfoSnapshot[_saleId][msg.sender].sumOfNerdFarmedAmount.mul(2));
+        require(userNewPoint >= 5e18, "at least 5 nerd to be eligible");
+        if (userNewPoint > 100e18) {
+            userNewPoint = 100e18; //capped at 100 nerd
+        }
         //adjust total point
-        totalNerd[_saleId] = totalNerd[_saleId].add(userInfoSnapshot[_saleId][msg.sender].nerdStakedAmount.add(userInfoSnapshot[_saleId][msg.sender].sumOfNerdFarmedAmount.mul(2))).sub(previousNerdPoint);
+        totalNerd[_saleId] = totalNerd[_saleId].add(userNewPoint).sub(previousNerdPoint);
     }
 
     function getUserSnapshotInfo(uint256 _saleId, address _user) public view returns (address, uint256, uint256, uint256[] memory, uint256[] memory, uint256) {

@@ -235,6 +235,13 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
             actualSpent = calculatedAmount.mul(allSales[_saleId].tokenPrice).div(allSales[_saleId].ethPegged);
             returnedEth = msg.value.sub(actualSpent);
         }
+        //ensure not over sold
+        if (allSales[_saleId].totalSold.add(calculatedAmount) > allSales[_saleId].totalSale) {
+            calculatedAmount = allSales[_saleId].totalSale.sub(allSales[_saleId].totalSold);
+            actualSpent = calculatedAmount.mul(allSales[_saleId].tokenPrice).div(allSales[_saleId].ethPegged);
+            returnedEth = msg.value.sub(actualSpent);
+        }
+
         if (returnedEth > 0) {
             msg.sender.transfer(returnedEth);
         }

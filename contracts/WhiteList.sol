@@ -82,6 +82,17 @@ contract WhiteList is Ownable {
         totalNerd[_saleId] = totalNerd[_saleId].add(userNewPoint).sub(previousNerdPoint);
     }
 
+    function isSnapshotStillValid(uint256 _saleId, address _addr) public view returns (bool) {
+        //validate snapshot
+		if (staking.getRemainingNerd(_addr) < userInfoSnapshot[_saleId][_addr].nerdStakedAmount) return false;
+
+		uint256 poolLength = userInfoSnapshot[_saleId][_addr].farmedLPAmount.length;
+        for(uint256 i = 0; i < poolLength; i++) {
+            if (vault.getRemainingLP(i, _addr) >= userInfoSnapshot[_saleId][_addr].farmedLPAmount[i]) return false;
+        }
+        return true;
+    }
+
     function getUserSnapshotInfo(uint256 _saleId, address _user) public view returns (address, uint256, uint256, uint256[] memory, uint256[] memory, uint256) {
         SnapshotInfo storage info = userInfoSnapshot[_saleId][_user];
         return (info.saleToken, info.saleId, info.timestamp, info.farmedLPAmount, info.nerdFarmedAmount, info.nerdStakedAmount);
@@ -99,6 +110,24 @@ contract WhiteList is Ownable {
         farmed = info.sumOfNerdFarmedAmount;
         total = totalNerd[_saleId];
         farmedLPAmount = info.farmedLPAmount;
+    }
+
+    function getUserSnapshotPoints(uint256 _saleId, address _user) public view returns (uint256 userPoint, uint256 total) {
+        total = totalNerd[_saleId];
+        if (!isSnapshotStillValid(_saleId, _user)) {
+            userPoint = 0;
+        } else {
+            userPoint = userInfoSnapshot[_saleId][msg.sender].nerdStakedAmount.add(userInfoSnapshot[_saleId][msg.sender].sumOfNerdFarmedAmount.mul(2));
+        }
+    }
+
+    function getUsersSnapshotPoints(uint256 _saleId, address[] memory _users) public view returns (uint256[] memory userPoints, uint256 total) {
+        total = totalNerd[_saleId];
+        userPoints = new uint256[](_users.length);
+        for(uint256 i = 0; i < _users.length; i++) {
+            (uint256 userPoint,) = getUserSnapshotPoints(_saleId, _users[i]);
+            userPoints[i]= userPoint;
+        }
     }
 
     function getAllFarmStakeState(uint256 _saleId) public view returns (address[] memory users, uint256[] memory farmeds, uint256[] memory stakeds) {

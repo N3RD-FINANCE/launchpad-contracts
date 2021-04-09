@@ -241,6 +241,7 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
         uint256 calculatedAmount = msg.value.mul(allSales[_saleId].ethPegged).div(allSales[_saleId].tokenPrice);
         UserInfo storage user = userInfo[_saleId][msg.sender];
         user.alloc = allSales[_saleId].allocation.getAllocation(msg.sender, allSales[_saleId].token, allSales[_saleId].totalSale, _saleId);
+        require(user.alloc > 0, "no allocation");
         require(!isFullAlloc(msg.sender, _saleId), "buy over alloc");
         uint256 returnedEth = 0;
         uint256 actualSpent = msg.value;

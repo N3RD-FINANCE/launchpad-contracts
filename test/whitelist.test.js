@@ -10,6 +10,7 @@ const UniswapV2Router02 = artifacts.require('UniswapV2Router02');
 const LaunchPad = artifacts.require('LaunchPad');
 
 const e18 = new BN('1000000000000000000');
+let instance;
 
 const { assertion } = require('@openzeppelin/test-helpers/src/expectRevert');
 const { web3 } = require('@openzeppelin/test-helpers/src/setup');
@@ -21,6 +22,11 @@ function bn(x) {
     return new BN(x);
 }
 
+async function buyNerd(acc) {
+	let currentTime = await time.latest();
+	await instance.router.swapExactETHForTokens(0, [instance.weth.address, instance.nerd.address], acc, bn(currentTime).toFixed(0), {from: acc, value: toWei(20)});
+}
+
 contract('Whitelist Test', (accounts) => {
 	let deployer = accounts[0];
 	let fundRecipient = accounts[1];
@@ -30,13 +36,14 @@ contract('Whitelist Test', (accounts) => {
 		this.router = await UniswapV2Router02.at('0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D')
 		this.weth = await IERC20.at((await this.router.WETH()).valueOf().toString());
 		this.whitelist = await WhiteList.new();
-		this.launchpad = await LaunchPad.new()
+		this.launchpad = await LaunchPad.new();
+		instance = this;
 	});
 
-	it('Flat allocation', async () => {
+	it('Cannot whitelist if token sale is not created yet', async () => {
 		
 	});
 
-	it('Add vesting', async () => {
+	it('Whitelist, validate snapshot, unstake, snapshot validate invalid', async () => {
 	});
 });

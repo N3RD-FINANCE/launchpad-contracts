@@ -4,12 +4,12 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol"; // for WETH
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "./interfaces/ILaunchPad.sol";
 import "./interfaces/INerdInterfaces.sol";
+import "./interfaces/IWhiteList.sol";
 
-contract WhiteList is Ownable {
+contract WhiteList is Ownable, IWhiteList {
     using SafeMath for uint256;
     
     struct SnapshotInfo {
-        address saleToken;
         uint256 saleId;
         uint256 timestamp;
         uint256[] farmedLPAmount;
@@ -23,6 +23,9 @@ contract WhiteList is Ownable {
     mapping(uint256 => uint256) public totalNerd;
     mapping(uint256 => address[]) public whiteListeds;
     mapping(uint256 => uint256[2]) public whitelistTimeFrame; 
+
+    uint256 public minNerd = 5e18;
+    uint256 public cappedNerd = 100e18;
 
     IERC20 public nerd;
     INerdVault public vault;
@@ -39,19 +42,23 @@ contract WhiteList is Ownable {
         launchpad = ILaunchPad(_lp);
     }
 
+    function setNerdAmounts(uint256 _min, uint256 _capped) public onlyOwner {
+        minNerd = _min;
+        cappedNerd = _capped;
+    }
+
     function setWhitelistTimeFrame(uint256 _saleId, uint256[2] memory times) public onlyOwner {
         (uint256 saleStart,) = launchpad.getSaleTimeFrame(_saleId);
         require(times[0] < times[1], "invalid times");
         require(times[1] < saleStart, "whitelist must finish before token sale start");
         whitelistTimeFrame[_saleId] = times;
     } 
-    function whitelistMe(uint256 _saleId) external {
+    function whitelistMe(uint256 _saleId) external override {
         require(whitelistTimeFrame[_saleId][0] <= block.timestamp && block.timestamp <= whitelistTimeFrame[_saleId][1], "out of time frame for whitelist");
         uint256 poolLength = vault.poolLength();
         if (userInfoSnapshot[_saleId][msg.sender].timestamp == 0) {
             //initialize snapshot info
             userInfoSnapshot[_saleId][msg.sender].saleId = _saleId;
-            userInfoSnapshot[_saleId][msg.sender].saleToken = launchpad.getSaleTokenByID(_saleId);
             userInfoSnapshot[_saleId][msg.sender].farmedLPAmount = new uint256[](poolLength);
             userInfoSnapshot[_saleId][msg.sender].nerdFarmedAmount = new uint256[](poolLength);
             whiteListeds[_saleId].push(msg.sender);
@@ -75,14 +82,14 @@ contract WhiteList is Ownable {
         userInfoSnapshot[_saleId][msg.sender].sumOfNerdFarmedAmount = newSumNerdFarmed;
         uint256 userNewPoint = userInfoSnapshot[_saleId][msg.sender].nerdStakedAmount.add(userInfoSnapshot[_saleId][msg.sender].sumOfNerdFarmedAmount.mul(2));
         require(userNewPoint >= 5e18, "at least 5 nerd to be eligible");
-        if (userNewPoint > 100e18) {
-            userNewPoint = 100e18; //capped at 100 nerd
+        if (userNewPoint > minNerd) {
+            userNewPoint = cappedNerd; //capped at 100 nerd
         }
         //adjust total point
         totalNerd[_saleId] = totalNerd[_saleId].add(userNewPoint).sub(previousNerdPoint);
     }
 
-    function isSnapshotStillValid(uint256 _saleId, address _addr) public view returns (bool) {
+    function isSnapshotStillValid(uint256 _saleId, address _addr) public view override returns (bool) {
         //validate snapshot
 		if (staking.getRemainingNerd(_addr) < userInfoSnapshot[_saleId][_addr].nerdStakedAmount) return false;
 
@@ -95,7 +102,7 @@ contract WhiteList is Ownable {
 
     function getUserSnapshotInfo(uint256 _saleId, address _user) public view returns (address, uint256, uint256, uint256[] memory, uint256[] memory, uint256) {
         SnapshotInfo storage info = userInfoSnapshot[_saleId][_user];
-        return (info.saleToken, info.saleId, info.timestamp, info.farmedLPAmount, info.nerdFarmedAmount, info.nerdStakedAmount);
+        return (launchpad.getSaleTokenByID(_saleId), info.saleId, info.timestamp, info.farmedLPAmount, info.nerdFarmedAmount, info.nerdStakedAmount);
     }
 
     function getFarmStakeState(uint256 _saleId, address _user) public view returns (uint256 farmed, uint256 staked) {
@@ -104,7 +111,7 @@ contract WhiteList is Ownable {
         farmed = info.sumOfNerdFarmedAmount;
     }
 
-    function getUserSnapshotDetails(uint256 _saleId, address _user) public view returns (uint256 farmed, uint256 staked, uint256 total, uint256[] memory farmedLPAmount) {
+    function getUserSnapshotDetails(uint256 _saleId, address _user) public view override returns (uint256 farmed, uint256 staked, uint256 total, uint256[] memory farmedLPAmount) {
         SnapshotInfo storage info = userInfoSnapshot[_saleId][_user];
         staked = info.nerdStakedAmount;
         farmed = info.sumOfNerdFarmedAmount;
@@ -148,5 +155,32 @@ contract WhiteList is Ownable {
 
     function getWhitelisteds(uint256 _saleId) external view returns (address[] memory) {
         return whiteListeds[_saleId];
+    }
+
+    function getLinearAllocation(address _user, uint256 _totalSale, uint256 _saleId)
+        external
+        view
+        override
+        returns (uint256) {
+		if (!isSnapshotStillValid(_saleId, _user)) return 0;
+		(uint256 farmed, uint256 staked, uint256 total,) = getUserSnapshotDetails(_saleId, _user);
+		
+		uint256 userPoint = farmed*2 + staked;
+		if (userPoint > minNerd) {
+            userPoint = cappedNerd; //capped at 100 nerd
+        }
+		return userPoint.mul(_totalSale).div(total);
+	}
+
+    function minNerdForWhitelist() external view override returns (uint256) {
+        return minNerd;
+    }
+
+	function cappedNerdForWhitelist() external view override returns (uint256) {
+        return cappedNerd;
+    }
+
+    function isWhitelisted(uint256 _saleId, address _user) public view override returns (bool) {
+        return userInfoSnapshot[_saleId][_user].timestamp > 0;
     }
 }

@@ -14,11 +14,11 @@ contract LinearAllocation is IAllocation, Ownable {
 		override
         returns (uint256) {
 		if (!whitelist.isSnapshotStillValid(_saleId, _user)) return 0;
-		(uint256 farmed, uint256 staked, uint256 total, uint256[] memory farmedLPAmount) = whitelist.getUserSnapshotDetails(_saleId, _user);
+		(uint256 farmed, uint256 staked, uint256 total,) = whitelist.getUserSnapshotDetails(_saleId, _user);
 		
 		uint256 userPoint = farmed*2 + staked;
-		if (userPoint > 100e18) {
-            userPoint = 100e18; //capped at 100 nerd
+		if (userPoint > whitelist.cappedNerdForWhitelist()) {
+            userPoint = whitelist.cappedNerdForWhitelist(); //capped at 100 nerd
         }
 		return userPoint.mul(_totalSale).div(total);
 	}

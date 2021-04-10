@@ -70,7 +70,7 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
     }
 
     function isFullAlloc(address _user, uint256 _saleId) public view returns (bool) {
-        return userInfo[_saleId][msg.sender].alloc <= userInfo[_saleId][msg.sender].bought;
+        return userInfo[_saleId][_user].alloc <= userInfo[_saleId][_user].bought;
     }
 
     function getAllSalesLength() public view returns (uint256) {

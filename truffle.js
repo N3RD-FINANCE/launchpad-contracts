@@ -1,38 +1,6 @@
 require("dotenv").config();
-const LedgerWalletProvider = require("truffle-ledger-provider");
-const PrivateKeyProvider = require("truffle-privatekey-provider");
-
-console.log(process.env.INFURA_APIKEY);
-
-const kovanLedgerOptions = {
-  networkId: 42, // mainnet
-  // path: "44'/60'/0'/0", // ledger default derivation path
-  path: "44'/60'/0'/0/0", // ledger default derivation path
-  askConfirm: false,
-  accountsLength: 1,
-  accountsOffset: 0,
-  gasPrice: 100000000000,
-};
-const mainnetLedgerOptions = {
-  networkId: 1, // mainnet
-  // path: "44'/60'/0'/0", // ledger default derivation path
-  path: "44'/60'/0'/0/0", // ledger default derivation path
-  askConfirm: false,
-  accountsLength: 1,
-  accountsOffset: 0,
-  gasPrice: 100000000000,
-};
-
-const kovanProvider = new LedgerWalletProvider(
-  kovanLedgerOptions,
-  `https://kovan.infura.io/v3/${process.env.INFURA_APIKEY}`
-);
-const mainnetProvider = new LedgerWalletProvider(
-  mainnetLedgerOptions,
-  `https://mainnet.infura.io/v3/${process.env.INFURA_APIKEY}`
-);
-
-
+const HDWalletProvider = require('@truffle/hdwallet-provider')
+const utils = require('web3-utils')
 
 module.exports = {
   networks: {
@@ -45,15 +13,33 @@ module.exports = {
       network_id: "*",
     },
     kovan: {
-      provider: kovanProvider,
+      provider: () => new HDWalletProvider(process.env.PRIVATE_KEY, `https://kovan.infura.io/v3/${process.env.INFURA_APIKEY}`),
       network_id: 42,
       gas: 4600000,
     },
     mainnet: {
-      provider: mainnetProvider,
+      provider: () => new HDWalletProvider(process.env.PRIVATE_KEY, `https://mainnet.infura.io/v3/${process.env.INFURA_APIKEY}`),
       network_id: 1,
       gas: 9999999,
       gasPrice: 100000000000,
+    },
+    bsc: {
+      provider: () => new HDWalletProvider(process.env.PRIVATE_KEY, 'https://bsc-dataseed.binance.org/'),
+      network_id: 56,
+      gas: 6000000,
+      gasPrice: utils.toWei('10', 'gwei'),
+      // confirmations: 0,
+      // timeoutBlocks: 200,
+      skipDryRun: true
+    },
+    bsctestnet: {
+      provider: () => new HDWalletProvider(process.env.PRIVATE_KEY, 'https://data-seed-prebsc-2-s2.binance.org:8545/'),
+      network_id: 97,
+      gas: 6000000,
+      gasPrice: utils.toWei('30', 'gwei'),
+      // confirmations: 0,
+      // timeoutBlocks: 200,
+      skipDryRun: true
     },
   },
   compilers: {

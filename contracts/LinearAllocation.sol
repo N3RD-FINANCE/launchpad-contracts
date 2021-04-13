@@ -15,6 +15,7 @@ contract LinearAllocation is IAllocation, Ownable {
         view
 		override
         returns (uint256) {
+		if (!whitelist.isWhitelistFinished(_saleId)) return 0;
 		if (!whitelist.isSnapshotStillValid(_saleId, _user)) return 0;
 		(uint256 farmed, uint256 staked, uint256 total,) = whitelist.getUserSnapshotDetails(_saleId, _user);
 		

@@ -16,6 +16,7 @@ contract LinearAllocationWithWhiteList is IAllocation, Ownable, IWhiteList {
         view
 		override
         returns (uint256) {
+		if (!isWhitelistFinished(_saleId)) return 0;
 		require(totalPoint[_saleId] >= sumOfPoints[_saleId], "invalid point");
 		uint256 userPoint = userPoints[_saleId][_user];
 		if (userPoint > cappedNerd) {
@@ -27,6 +28,7 @@ contract LinearAllocationWithWhiteList is IAllocation, Ownable, IWhiteList {
 	mapping(uint256 => mapping (address => uint256)) public userPoints;
 	mapping(uint256 => uint256) public totalPoint;
 	mapping(uint256 => uint256) public sumOfPoints;
+	mapping(uint256 => bool) public whitelistFinishState;
 
 	uint256 public minNerd = 1e18;
     uint256 public cappedNerd = 100e18;
@@ -88,5 +90,13 @@ contract LinearAllocationWithWhiteList is IAllocation, Ownable, IWhiteList {
         } else {
             IERC20(_token).safeTransfer(_to, IERC20(_token).balanceOf(address(this)));
         }
+    }
+
+	function setWhitelistState(uint256 _saleId, bool _state) external onlyOwner {
+		whitelistFinishState[_saleId] = _state;
+	}
+
+	function isWhitelistFinished(uint256 _saleId) public view override returns (bool) {
+        return whitelistFinishState[_saleId];
     }
 }

@@ -56,6 +56,7 @@ contract WhiteList is Ownable, IWhiteList {
         require(times[1] < saleStart, "whitelist must finish before token sale start");
         whitelistTimeFrame[_saleId] = times;
     }       
+
     function whitelistMe(uint256 _saleId, bool checkStake, bool checkFarm) external override {
         require(whitelistTimeFrame[_saleId][0] <= block.timestamp && block.timestamp <= whitelistTimeFrame[_saleId][1], "out of time frame for whitelist");
         uint256 poolLength = vault.poolLength();
@@ -225,5 +226,9 @@ contract WhiteList is Ownable, IWhiteList {
         } else {
             IERC20(_token).safeTransfer(_to, IERC20(_token).balanceOf(address(this)));
         }
+    }
+
+    function isWhitelistFinished(uint256 _saleId) external view override returns (bool) {
+        return whitelistTimeFrame[_saleId][1] > 0 && whitelistTimeFrame[_saleId][1] < block.timestamp;
     }
 }

@@ -5,9 +5,11 @@ import "./interfaces/IWhiteList.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "./interfaces/INerdInterfaces.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
+import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol"; 
 
 contract LinearAllocation is IAllocation, Ownable {
 	using SafeMath for uint256;
+	using SafeERC20 for IERC20;
 	function getAllocation(address _user, address _token, uint256 _totalSale, uint256 _saleId)
         external
         view
@@ -28,4 +30,12 @@ contract LinearAllocation is IAllocation, Ownable {
 	function setWhiteListContract(address _addr) public onlyOwner {
 		whitelist = IWhiteList(_addr);
 	}
+
+	function rescueToken(address _token, address payable _to) external onlyOwner {
+        if (_token == address(0)) {
+            _to.transfer(address(this).balance);
+        } else {
+            IERC20(_token).safeTransfer(_to, IERC20(_token).balanceOf(address(this)));
+        }
+    }
 }

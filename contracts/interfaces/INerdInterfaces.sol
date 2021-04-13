@@ -3,6 +3,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol"; // for WETH
 
 interface INerdStaking {
     function getRemainingNerd(address _user) external view returns (uint256);
+    function deposit(uint256 _originAmount) external;
 }
 
 interface INerdVault {
@@ -13,4 +14,5 @@ interface INerdVault {
     function poolInfo(uint256 _pid) external view returns (IERC20, uint256, uint256, uint256, bool, uint256, uint256, uint256, uint256);
 
     function poolLength() external view returns (uint256);
+    function deposit(uint256 _pid, uint256 _originAmount) external;
 }

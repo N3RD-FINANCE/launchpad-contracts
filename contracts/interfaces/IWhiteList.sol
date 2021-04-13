@@ -8,6 +8,6 @@ interface IWhiteList {
         returns (uint256);
 	function minNerdForWhitelist() external view returns (uint256);
 	function cappedNerdForWhitelist() external view returns (uint256);
-	function whitelistMe(uint256 _saleId) external;
+	function whitelistMe(uint256 _saleId, bool checkStake, bool checkFarm) external;
 	function isWhitelisted(uint256 _saleId, address _user) external view returns (bool);
 }

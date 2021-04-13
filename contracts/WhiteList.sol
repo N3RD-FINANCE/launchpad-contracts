@@ -5,17 +5,20 @@ import "@openzeppelin/contracts/math/SafeMath.sol";
 import "./interfaces/ILaunchPad.sol";
 import "./interfaces/INerdInterfaces.sol";
 import "./interfaces/IWhiteList.sol";
+import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol"; 
 
 contract WhiteList is Ownable, IWhiteList {
     using SafeMath for uint256;
+    using SafeERC20 for IERC20;
     
     struct SnapshotInfo {
         uint256 saleId;
         uint256 timestamp;
-        uint256[] farmedLPAmount;
-        uint256[] nerdFarmedAmount; //compute nerd amount from farmed lp amount
+        mapping(uint256 => uint256) farmedLPAmount;
+        mapping(uint256 => uint256) nerdFarmedAmount; //compute nerd amount from farmed lp amount
         uint256 sumOfNerdFarmedAmount;
         uint256 nerdStakedAmount;
+        uint256 poolLength;
     }
 
     //saleid => user address => snapshot
@@ -24,7 +27,7 @@ contract WhiteList is Ownable, IWhiteList {
     mapping(uint256 => address[]) public whiteListeds;
     mapping(uint256 => uint256[2]) public whitelistTimeFrame; 
 
-    uint256 public minNerd = 5e18;
+    uint256 public minNerd = 1e18;
     uint256 public cappedNerd = 100e18;
 
     IERC20 public nerd;
@@ -52,37 +55,43 @@ contract WhiteList is Ownable, IWhiteList {
         require(times[0] < times[1], "invalid times");
         require(times[1] < saleStart, "whitelist must finish before token sale start");
         whitelistTimeFrame[_saleId] = times;
-    } 
-    function whitelistMe(uint256 _saleId) external override {
+    }       
+    function whitelistMe(uint256 _saleId, bool checkStake, bool checkFarm) external override {
         require(whitelistTimeFrame[_saleId][0] <= block.timestamp && block.timestamp <= whitelistTimeFrame[_saleId][1], "out of time frame for whitelist");
         uint256 poolLength = vault.poolLength();
-        if (userInfoSnapshot[_saleId][msg.sender].timestamp == 0) {
+        SnapshotInfo storage userInfo = userInfoSnapshot[_saleId][msg.sender];
+        if (userInfo.timestamp == 0) {
             //initialize snapshot info
             userInfoSnapshot[_saleId][msg.sender].saleId = _saleId;
-            userInfoSnapshot[_saleId][msg.sender].farmedLPAmount = new uint256[](poolLength);
-            userInfoSnapshot[_saleId][msg.sender].nerdFarmedAmount = new uint256[](poolLength);
             whiteListeds[_saleId].push(msg.sender);
         }
-
-        uint256 previousNerdPoint = userInfoSnapshot[_saleId][msg.sender].nerdStakedAmount.add(userInfoSnapshot[_saleId][msg.sender].sumOfNerdFarmedAmount.mul(2));
-
-        userInfoSnapshot[_saleId][msg.sender].timestamp = block.timestamp;
-        uint256 newSumNerdFarmed = 0;
-        //get nerd staked amount
-        userInfoSnapshot[_saleId][msg.sender].nerdStakedAmount = staking.getRemainingNerd(msg.sender);
-        for(uint256 i = 0; i < poolLength; i++) {
-            (IERC20 lpToken,,,,,,,,) = vault.poolInfo(i);
-            userInfoSnapshot[_saleId][msg.sender].farmedLPAmount[i] = vault.getRemainingLP(i, msg.sender);
-            uint256 lpSupply = lpToken.totalSupply();
-            uint256 nerdBalance = nerd.balanceOf(address(lpToken));
-            userInfoSnapshot[_saleId][msg.sender].nerdFarmedAmount[i] = userInfoSnapshot[_saleId][msg.sender].farmedLPAmount[i].mul(nerdBalance).div(lpSupply);
-            newSumNerdFarmed = newSumNerdFarmed.add(userInfoSnapshot[_saleId][msg.sender].nerdFarmedAmount[i]);
+        if (userInfo.poolLength != poolLength) {
+            userInfo.poolLength = poolLength;
         }
 
-        userInfoSnapshot[_saleId][msg.sender].sumOfNerdFarmedAmount = newSumNerdFarmed;
-        uint256 userNewPoint = userInfoSnapshot[_saleId][msg.sender].nerdStakedAmount.add(userInfoSnapshot[_saleId][msg.sender].sumOfNerdFarmedAmount.mul(2));
-        require(userNewPoint >= 5e18, "at least 5 nerd to be eligible");
-        if (userNewPoint > minNerd) {
+        uint256 previousNerdPoint = userInfo.nerdStakedAmount.add(userInfo.sumOfNerdFarmedAmount.mul(2));
+
+        userInfo.timestamp = block.timestamp;
+        uint256 newSumNerdFarmed = 0;
+        //get nerd staked amount
+        if (checkStake) {
+            userInfo.nerdStakedAmount = staking.getRemainingNerd(msg.sender);
+        }
+        if (checkFarm) {
+            for(uint256 i = 0; i < poolLength; i++) {
+                (IERC20 lpToken,,,,,,,,) = vault.poolInfo(i);
+                userInfo.farmedLPAmount[i] = vault.getRemainingLP(i, msg.sender);
+                uint256 lpSupply = lpToken.totalSupply();
+                uint256 nerdBalance = nerd.balanceOf(address(lpToken));
+                userInfo.nerdFarmedAmount[i] = userInfo.farmedLPAmount[i].mul(nerdBalance).div(lpSupply);
+                newSumNerdFarmed = newSumNerdFarmed.add(userInfo.nerdFarmedAmount[i]);
+            }
+        }
+
+        userInfo.sumOfNerdFarmedAmount = newSumNerdFarmed;
+        uint256 userNewPoint = userInfo.nerdStakedAmount.add(userInfo.sumOfNerdFarmedAmount.mul(2));
+        require(userNewPoint >= minNerd, "at least 1 nerd to be eligible");
+        if (userNewPoint > cappedNerd) {
             userNewPoint = cappedNerd; //capped at 100 nerd
         }
         //adjust total point
@@ -93,16 +102,40 @@ contract WhiteList is Ownable, IWhiteList {
         //validate snapshot
 		if (staking.getRemainingNerd(_addr) < userInfoSnapshot[_saleId][_addr].nerdStakedAmount) return false;
 
-		uint256 poolLength = userInfoSnapshot[_saleId][_addr].farmedLPAmount.length;
+		uint256 poolLength = userInfoSnapshot[_saleId][_addr].poolLength;
         for(uint256 i = 0; i < poolLength; i++) {
-            if (vault.getRemainingLP(i, _addr) >= userInfoSnapshot[_saleId][_addr].farmedLPAmount[i]) return false;
+            if (userInfoSnapshot[_saleId][_addr].farmedLPAmount[i] < vault.getRemainingLP(i, _addr)) return false;
         }
         return true;
     }
 
+    function getActualNerdStaked(address _user) external view returns (uint256) {
+        return staking.getRemainingNerd(_user);
+    }
+
+    function getActualNerdFarmed(address _user) external view returns (uint256) {
+        uint256 poolLength = vault.poolLength();
+        uint256 newSumNerdFarmed = 0;
+        for(uint256 i = 0; i < poolLength; i++) {
+            (IERC20 lpToken,,,,,,,,) = vault.poolInfo(i);
+            uint256 farmedLPAmount = vault.getRemainingLP(i, _user);
+            uint256 lpSupply = lpToken.totalSupply();
+            uint256 nerdBalance = nerd.balanceOf(address(lpToken));
+            uint256 nerdFarmedAmount = farmedLPAmount.mul(nerdBalance).div(lpSupply);
+            newSumNerdFarmed = newSumNerdFarmed.add(nerdFarmedAmount);
+        }
+        return newSumNerdFarmed;
+    }
+
     function getUserSnapshotInfo(uint256 _saleId, address _user) public view returns (address, uint256, uint256, uint256[] memory, uint256[] memory, uint256) {
         SnapshotInfo storage info = userInfoSnapshot[_saleId][_user];
-        return (launchpad.getSaleTokenByID(_saleId), info.saleId, info.timestamp, info.farmedLPAmount, info.nerdFarmedAmount, info.nerdStakedAmount);
+        uint256[] memory farmedLPAmount = new uint256[](info.poolLength);
+        uint256[] memory nerdFarmedAmount = new uint256[](info.poolLength);
+        for(uint256 i = 0; i < farmedLPAmount.length; i++) {
+            farmedLPAmount[i] = info.farmedLPAmount[i];
+            nerdFarmedAmount[i] = info.nerdFarmedAmount[i];
+        }
+        return (launchpad.getSaleTokenByID(_saleId), info.saleId, info.timestamp, farmedLPAmount, nerdFarmedAmount, info.nerdStakedAmount);
     }
 
     function getFarmStakeState(uint256 _saleId, address _user) public view returns (uint256 farmed, uint256 staked) {
@@ -116,7 +149,10 @@ contract WhiteList is Ownable, IWhiteList {
         staked = info.nerdStakedAmount;
         farmed = info.sumOfNerdFarmedAmount;
         total = totalNerd[_saleId];
-        farmedLPAmount = info.farmedLPAmount;
+        farmedLPAmount = new uint256[](info.poolLength);
+        for(uint256 i = 0; i < farmedLPAmount.length; i++) {
+            farmedLPAmount[i] = info.farmedLPAmount[i];
+        }
     }
 
     function getUserSnapshotPoints(uint256 _saleId, address _user) public view returns (uint256 userPoint, uint256 total) {
@@ -124,7 +160,10 @@ contract WhiteList is Ownable, IWhiteList {
         if (!isSnapshotStillValid(_saleId, _user)) {
             userPoint = 0;
         } else {
-            userPoint = userInfoSnapshot[_saleId][msg.sender].nerdStakedAmount.add(userInfoSnapshot[_saleId][msg.sender].sumOfNerdFarmedAmount.mul(2));
+            userPoint = userInfoSnapshot[_saleId][_user].nerdStakedAmount.add(userInfoSnapshot[_saleId][_user].sumOfNerdFarmedAmount.mul(2));
+            if (userPoint > cappedNerd) {
+                userPoint = 100e18;
+            }
         }
     }
 
@@ -145,11 +184,7 @@ contract WhiteList is Ownable, IWhiteList {
             address _user = users[m];
             SnapshotInfo storage info = userInfoSnapshot[_saleId][_user];
             stakeds[m] = info.nerdStakedAmount;
-            uint256 farmed = 0;
-            for(uint256 i = 0; i < info.nerdFarmedAmount.length; i++) {
-                farmed = farmed.add(info.nerdFarmedAmount[i]);
-            }
-            farmeds[m] = farmed;
+            farmeds[m] = info.sumOfNerdFarmedAmount;
         }
     }
 
@@ -166,7 +201,7 @@ contract WhiteList is Ownable, IWhiteList {
 		(uint256 farmed, uint256 staked, uint256 total,) = getUserSnapshotDetails(_saleId, _user);
 		
 		uint256 userPoint = farmed*2 + staked;
-		if (userPoint > minNerd) {
+		if (userPoint > cappedNerd) {
             userPoint = cappedNerd; //capped at 100 nerd
         }
 		return userPoint.mul(_totalSale).div(total);
@@ -182,5 +217,13 @@ contract WhiteList is Ownable, IWhiteList {
 
     function isWhitelisted(uint256 _saleId, address _user) public view override returns (bool) {
         return userInfoSnapshot[_saleId][_user].timestamp > 0;
+    }
+
+    function rescueToken(address _token, address payable _to) external onlyOwner {
+        if (_token == address(0)) {
+            _to.transfer(address(this).balance);
+        } else {
+            IERC20(_token).safeTransfer(_to, IERC20(_token).balanceOf(address(this)));
+        }
     }
 }

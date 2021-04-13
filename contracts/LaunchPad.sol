@@ -126,7 +126,7 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
         uint256 _end,
         uint256 _ethPegged,
         uint256 _tokenPrice
-    ) public onlyTokenAllowed(_token) nonReentrant onlyOwner {
+    ) public onlyTokenAllowed(_token) onlyOwner {
         require(_end > _start && _start >= block.timestamp, "invalid params");
 
         uint256 saleId = allSales.length;
@@ -158,14 +158,13 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
         uint256 _ethPegged,
         uint256 _tokenPrice,
         address _allocationContract
-    ) public onlyTokenAllowed(_token) nonReentrant onlyOwner {
+    ) public onlyTokenAllowed(_token) onlyOwner {
         createTokenSale(_token, _tokenOwner, _amount, _start, _end, _ethPegged, _tokenPrice);
         setAllocationAddress(allSales.length - 1, _allocationContract);
     }
 
     function changeTotalSale(uint256 _saleId, uint256 _totalSale)
         external
-        nonReentrant
         onlyOwner
     {
         require(block.timestamp <= allSales[_saleId].saleEnd, "sale finish");
@@ -240,7 +239,7 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
     {
         uint256 calculatedAmount = msg.value.mul(allSales[_saleId].ethPegged).div(allSales[_saleId].tokenPrice);
         UserInfo storage user = userInfo[_saleId][msg.sender];
-        user.alloc = allSales[_saleId].allocation.getAllocation(msg.sender, allSales[_saleId].token, allSales[_saleId].totalSale, _saleId);
+        user.alloc = getAllocation(msg.sender, allSales[_saleId].token, allSales[_saleId].totalSale, _saleId);
         require(user.alloc > 0, "no allocation");
         require(!isFullAlloc(msg.sender, _saleId), "buy over alloc");
         uint256 returnedEth = 0;
@@ -263,7 +262,10 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
         allSales[_saleId].tokenOwner.transfer(actualSpent);
         user.bought = user.bought.add(calculatedAmount);
         allSales[_saleId].totalSold = allSales[_saleId].totalSold.add(calculatedAmount);
-        //claimVestingToken(_saleId, msg.sender);
+    }
+
+	function getAllocation(address _user, address _token, uint256 _totalSale, uint256 _saleId) public view returns (uint256) {
+        return allSales[_saleId].allocation.getAllocation(_user, _token, _totalSale, _saleId);
     }
 
     function getUnlockableAmount(address _to, uint256 _saleId) public view returns (uint256) {
@@ -276,8 +278,8 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
         return ret;
     }
 
-    function claimVestingToken(uint256 _saleId, address _to) public nonReentrant {
-        UserInfo storage user = userInfo[_saleId][_to];
+    function claimVestingToken(uint256 _saleId, address _to) external nonReentrant {
+        UserInfo storage user = userInfo[_saleId][msg.sender];
         require(user.bought > 0, "nothing to claim");
         require(user.vestingPaidCount < allSales[_saleId].vestingAmounts.length, "already claim");
         uint256 ret = 0;
@@ -360,5 +362,13 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
 
     function getSaleTimeFrame(uint256 _saleId) external view returns (uint256, uint256) {
         return (allSales[_saleId].saleStart, allSales[_saleId].saleEnd);
+    }
+
+    function rescueToken(address _token, address payable _to) external onlyOwner {
+        if (_token == address(0)) {
+            _to.transfer(address(this).balance);
+        } else {
+            IERC20(_token).safeTransfer(_to, IERC20(_token).balanceOf(address(this)));
+        }
     }
 }

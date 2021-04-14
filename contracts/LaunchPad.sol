@@ -50,6 +50,14 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
     TokenSale[] public allSales;
     IERC20 public usdContract;
 
+    address public whitelistApprover;
+    uint256 public chainId;
+
+    constructor(address _signer, uint256 _chainId) public {
+        whitelistApprover = _signer;
+        chainId = _chainId;
+    }
+
     modifier onlyTokenAllowed(address _token) {
         require(allowedTokens[_token], "!token not allowed");
         _;
@@ -231,12 +239,18 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
 
 
     //eth or bnb
-    function buyTokenWithEth(uint256 _saleId)
+    function buyTokenWithEth(uint256 _saleId, bytes32[] memory rs, uint8 v)
         external
         payable
         nonReentrant
         onlyValidTime(_saleId)
     {
+        bytes32 h = keccak256(abi.encode(msg.sender, address(this), chainId, _saleId, true));
+        
+        require(ecrecover(keccak256(
+            abi.encodePacked("\x19Ethereum Signed Message:\n32", h)
+        ), v, rs[0], rs[1]) == whitelistApprover, "invalid signature");
+
         uint256 calculatedAmount = msg.value.mul(allSales[_saleId].ethPegged).div(allSales[_saleId].tokenPrice);
         UserInfo storage user = userInfo[_saleId][msg.sender];
         user.alloc = getAllocation(msg.sender, allSales[_saleId].token, allSales[_saleId].totalSale, _saleId);
@@ -290,15 +304,6 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
         }
         user.vestingPaidCount = allSales[_saleId].vestingAmounts.length;
         safeTransferOut(allSales[_saleId].token, _to, ret);
-    }
-
-    function buyTokenWithUsd(uint256 _saleId, uint256 _usdtAmount)
-        external
-        payable
-        nonReentrant
-        onlyValidTime(_saleId)
-    {
-        revert();
     }
 
     function getSaleById(uint256 _saleId)

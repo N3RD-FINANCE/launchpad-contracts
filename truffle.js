@@ -20,8 +20,8 @@ module.exports = {
     mainnet: {
       provider: () => new HDWalletProvider(process.env.PRIVATE_KEY, `https://mainnet.infura.io/v3/${process.env.INFURA_APIKEY}`),
       network_id: 1,
-      gas: 9999999,
-      gasPrice: 100000000000,
+      gas: 999999,
+      gasPrice: 130000000000,
     },
     bsc: {
       provider: () => new HDWalletProvider(process.env.PRIVATE_KEY, 'https://bsc-dataseed.binance.org/'),

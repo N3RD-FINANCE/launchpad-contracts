@@ -12,6 +12,8 @@ const LaunchPad = artifacts.require('LaunchPad');
 const INerdVault = artifacts.require('INerdVault')
 const INerdStaking = artifacts.require('INerdStaking')
 const LinearAllocation = artifacts.require('LinearAllocation')
+const Snapshot = artifacts.require('Snapshot')
+const Signer = require('./signer')
 
 
 const e18 = new BN('1000000000000000000');
@@ -55,6 +57,7 @@ contract('Whitelist Test', (accounts) => {
 	let deployer = accounts[0];
 	let fundRecipient = accounts[1];
 	let users = accounts.slice(2);
+	let approver = Signer.approver;
     beforeEach(async () => {
 		this.nerd = await IERC20.at('0x32C868F6318D6334B2250F323D914Bc2239E4EeE')
 		this.router = await UniswapV2Router02.at('0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D')
@@ -63,12 +66,13 @@ contract('Whitelist Test', (accounts) => {
 		this.pair = await IERC20.at((await this.factory.getPair(this.nerd.address, this.weth.address)).valueOf().toString())
 		this.vault = await INerdVault.at('0x47cE2237d7235Ff865E1C74bF3C6d9AF88d1bbfF')
 		this.staking = await INerdStaking.at('0x357ADa6E0da1BB40668BDDd3E3aF64F472Cbd9ff')
-		this.whitelist = await WhiteList.new();
-		this.launchpad = await LaunchPad.new();
+		this.whitelist = await WhiteList.new(approver, 1337);
+		this.launchpad = await LaunchPad.new(approver, 1337);
 		this.sample = await SampleERC20.new(deployer)
 		this.linear = await LinearAllocation.new();
 		await this.linear.setWhiteListContract(this.whitelist.address, {from: deployer})
 		await this.whitelist.setLaunchPad(this.launchpad.address, {from: deployer})
+		this.snapshot = await Snapshot.at("0xfE72c5b590abD8bbbbc10bB2a2FF5389f3B36b5f")
 		instance = this;
 	});
 
@@ -98,8 +102,16 @@ contract('Whitelist Test', (accounts) => {
 
 		await this.whitelist.setWhitelistTimeFrame(0, [currentTime, bn(currentTime).plus(900).toFixed(0)])
 
-		await expectRevert(this.whitelist.whitelistMe(0, true, true, {from: users[3]}), "at least 1 nerd to be eligible")
-		await expectRevert(this.whitelist.whitelistMe(0, true, true, {from: users[4]}), "at least 1 nerd to be eligible")
+		let amountsSnapshot = (await this.snapshot.getSnapshot(users[3])).valueOf().amountsSnapshot
+		let signature = Signer.signWhitelist(users[3], this.whitelist.address, 1337, 0, amountsSnapshot)
+
+		await expectRevert(this.whitelist.whitelistMe(0, amountsSnapshot, [signature.r, signature.s], signature.v,  {from: users[3]}), "at least 1 nerd to be eligible")
+		
+		amountsSnapshot = (await this.snapshot.getSnapshot(users[4])).valueOf().amountsSnapshot
+		signature = Signer.signWhitelist(users[4], this.whitelist.address, 1337, 0, amountsSnapshot)
+		await expectRevert(this.whitelist.whitelistMe(0, amountsSnapshot, [signature.r, signature.s], signature.v,  {from: users[4]}), "at least 1 nerd to be eligible")
+		signature = Signer.signWhitelist(users[5], this.whitelist.address, 1337, 0, amountsSnapshot)
+		await expectRevert(this.whitelist.whitelistMe(0, amountsSnapshot, [signature.r, signature.s], signature.v,  {from: users[4]}), "invalid signature")
 
 		for(var i = 3; i < 15; i++) {
 			await buyNerd(users[i])
@@ -108,9 +120,9 @@ contract('Whitelist Test', (accounts) => {
 			await addLiquidityAndFarm(users[i], toWei(1))
 		}
 
-		let tx0 = await this.whitelist.whitelistMe(0, true, true, {from: users[0]})
-		let tx1 = await this.whitelist.whitelistMe(0, true, true, {from: users[1]})
-		let tx2 = await this.whitelist.whitelistMe(0, true, true, {from: users[2]})
+		await this.whitelist.whitelistMe(0, true, true, {from: users[0]})
+		await this.whitelist.whitelistMe(0, true, true, {from: users[1]})
+		await this.whitelist.whitelistMe(0, true, true, {from: users[2]})
 		
 
 		for(var i = 3; i < 15; i++) {

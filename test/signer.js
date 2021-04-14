@@ -10,5 +10,10 @@ module.exports = {
         let msgHash = web3.utils.sha3(encoded);
         return web3.eth.accounts.sign(msgHash, privateKey);
     },
+    signValidationSnapshot: function (addr, contractAddress, chainId, _saleId) {
+        const encoded = web3.eth.abi.encodeParameters(['address', 'address', 'uint256', 'uint256', 'bool'], [addr, contractAddress, chainId, _saleId, true])
+        let msgHash = web3.utils.sha3(encoded);
+        return web3.eth.accounts.sign(msgHash, privateKey);
+    },
     approver: address
 }

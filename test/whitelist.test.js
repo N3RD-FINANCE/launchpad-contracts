@@ -120,37 +120,50 @@ contract('Whitelist Test', (accounts) => {
 			await addLiquidityAndFarm(users[i], toWei(1))
 		}
 
-		await this.whitelist.whitelistMe(0, true, true, {from: users[0]})
-		await this.whitelist.whitelistMe(0, true, true, {from: users[1]})
-		await this.whitelist.whitelistMe(0, true, true, {from: users[2]})
+		amountsSnapshot = (await this.snapshot.getSnapshot(users[0])).valueOf().amountsSnapshot
+		signature = Signer.signWhitelist(users[0], this.whitelist.address, 1337, 0, amountsSnapshot)
+		await this.whitelist.whitelistMe(0, amountsSnapshot, [signature.r, signature.s], signature.v, {from: users[0]})
+		amountsSnapshot = (await this.snapshot.getSnapshot(users[1])).valueOf().amountsSnapshot
+		signature = Signer.signWhitelist(users[1], this.whitelist.address, 1337, 0, amountsSnapshot)
+		await this.whitelist.whitelistMe(0, amountsSnapshot, [signature.r, signature.s], signature.v, {from: users[1]})
+		amountsSnapshot = (await this.snapshot.getSnapshot(users[2])).valueOf().amountsSnapshot
+		signature = Signer.signWhitelist(users[2], this.whitelist.address, 1337, 0, amountsSnapshot)
+		await this.whitelist.whitelistMe(0, amountsSnapshot, [signature.r, signature.s], signature.v, {from: users[2]})
 		
 
 		for(var i = 3; i < 15; i++) {
-			await this.whitelist.whitelistMe(0, true, true, {from: users[i]})
+			amountsSnapshot = (await this.snapshot.getSnapshot(users[i])).valueOf().amountsSnapshot
+			signature = Signer.signWhitelist(users[i], this.whitelist.address, 1337, 0, amountsSnapshot)
+			await this.whitelist.whitelistMe(0, amountsSnapshot, [signature.r, signature.s], signature.v, {from: users[i]})
 		}
 
 		const point2 = (await this.whitelist.getUserSnapshotPoints(0, users[2])).valueOf().userPoint.toString();
 		assert.equal(toWei(100), point2)
 
 		const point0 = (await this.whitelist.getUserSnapshotPoints(0, users[0])).valueOf().userPoint.toString();
-		const user0Staked = (await this.whitelist.getActualNerdStaked(users[0])).valueOf().toString()
-		const user0Farmed = (await this.whitelist.getActualNerdFarmed(users[0])).valueOf().toString()
+		amountsSnapshot = (await this.snapshot.getSnapshot(users[0])).valueOf().amountsSnapshot
+		const user0Staked = amountsSnapshot[0].toString()
+		const user0Farmed = amountsSnapshot[1].toString()
 		assert.equal(point0, bn(user0Farmed).multipliedBy(2).plus(user0Staked).toFixed(0))
 
 		await time.increase(1000)
 		//buying token
-		await this.launchpad.buyTokenWithEth(0, {from: users[0], value: toWei(100)})
-		await expectRevert(this.launchpad.buyTokenWithEth(0, {from: users[0], value: toWei(100)}), "buy over alloc")
+		signature = Signer.signValidationSnapshot(users[0], this.launchpad.address, 1337, 0)
+		await this.launchpad.buyTokenWithEth(0, [signature.r, signature.s], signature.v, {from: users[0], value: toWei(100)})
+		await expectRevert(this.launchpad.buyTokenWithEth(0, [signature.r, signature.s], signature.v, {from: users[0], value: toWei(100)}), "buy over alloc")
 
-		await this.launchpad.buyTokenWithEth(0, {from: users[1], value: toWei(100)})
-		await expectRevert(this.launchpad.buyTokenWithEth(0, {from: users[1], value: toWei(100)}), "buy over alloc")
+		signature = Signer.signValidationSnapshot(users[1], this.launchpad.address, 1337, 0)
+		await this.launchpad.buyTokenWithEth(0, [signature.r, signature.s], signature.v, {from: users[1], value: toWei(100)})
+		await expectRevert(this.launchpad.buyTokenWithEth(0, [signature.r, signature.s], signature.v, {from: users[1], value: toWei(100)}), "buy over alloc")
 
-		await this.launchpad.buyTokenWithEth(0, {from: users[2], value: toWei(100)})
-		await expectRevert(this.launchpad.buyTokenWithEth(0, {from: users[2], value: toWei(100)}), "buy over alloc")
+		signature = Signer.signValidationSnapshot(users[2], this.launchpad.address, 1337, 0)
+		await this.launchpad.buyTokenWithEth(0, [signature.r, signature.s], signature.v, {from: users[2], value: toWei(100)})
+		await expectRevert(this.launchpad.buyTokenWithEth(0, [signature.r, signature.s], signature.v, {from: users[2], value: toWei(100)}), "buy over alloc")
 
 		for(var i = 3; i < 15; i++) {
-			await this.launchpad.buyTokenWithEth(0, {from: users[i], value: toWei(100)})
-			await expectRevert(this.launchpad.buyTokenWithEth(0, {from: users[i], value: toWei(100)}), "buy over alloc")
+			signature = Signer.signValidationSnapshot(users[i], this.launchpad.address, 1337, 0)
+			await this.launchpad.buyTokenWithEth(0, [signature.r, signature.s], signature.v, {from: users[i], value: toWei(100)})
+			await expectRevert(this.launchpad.buyTokenWithEth(0, [signature.r, signature.s], signature.v, {from: users[i], value: toWei(100)}), "buy over alloc")
 		}
 
 		for(var i = 0; i < 15; i++) {

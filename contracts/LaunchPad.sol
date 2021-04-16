@@ -31,6 +31,7 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
         uint256[] vestingPercentsX10; //token vesting array => contain token percentage
         uint256[] vestingClaimeds; //token vesting array => contain token percentage
         IAllocation allocation;
+        bool needWhitelist;
     }
 
     struct UserInfo {
@@ -102,6 +103,10 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
     function setLaunchPad(address _addr, uint256 _percent) external onlyOwner {
         launchPadFund = _addr;
         launchPadPercent = _percent;
+    }
+
+    function setNeedWhitelist(uint256 _saleId, bool _need) external onlyOwner {
+        allSales[_saleId].needWhitelist = _need;
     }
 
     // function validateVestingConfig(
@@ -222,7 +227,6 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
 
     function addVesting(uint256 _saleId, uint256 _percentX10) public onlyOwner {
         //only add vesting if sale finishes
-        require(allSales[_saleId].saleEnd < block.timestamp, "Sales not finished yet");
         require(_percentX10 <= 1000, "percent too high");
         uint256 _amount = allSales[_saleId].totalSold.mul(_percentX10).div(1000);
         

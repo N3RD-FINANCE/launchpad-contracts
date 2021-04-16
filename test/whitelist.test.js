@@ -94,6 +94,7 @@ contract('Whitelist Test', (accounts) => {
 		await stake(users[2], toWei(100))
 		await addLiquidityAndFarm(users[2], toWei(30))
 
+
 		//add new token sale
 		let currentTime = await time.latest();
 		await this.launchpad.setAllowedToken(this.sample.address, true)
@@ -148,6 +149,9 @@ contract('Whitelist Test', (accounts) => {
 
 		await time.increase(1000)
 		//buying token
+		//reading getUserSnapshotInfo
+		let getUserSnapshotInfo = await this.whitelist.getUserSnapshotInfo(0, users[0])
+		console.log('getUserSnapshotInfo:', getUserSnapshotInfo)
 		signature = Signer.signValidationSnapshot(users[0], this.launchpad.address, 1337, 0)
 		await this.launchpad.buyTokenWithEth(0, [signature.r, signature.s], signature.v, {from: users[0], value: toWei(100)})
 		await expectRevert(this.launchpad.buyTokenWithEth(0, [signature.r, signature.s], signature.v, {from: users[0], value: toWei(100)}), "buy over alloc")

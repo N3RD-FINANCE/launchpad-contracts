@@ -87,8 +87,7 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
     }
 
     function setAllowedToken(address _token, bool _val) external onlyOwner {
-        require(IDecimal(_token).decimals() == 18, "!decimal 18");
-        require(IERC20(_token).totalSupply() > 0, "!decimal 18");
+        require(IERC20(_token).totalSupply() > 0, "!total supply");
         allowedTokens[_token] = _val;
     }
 

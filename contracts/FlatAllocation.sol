@@ -15,4 +15,8 @@ contract FlatAllocation is IAllocation, Ownable {
         returns (uint256) {
 		return allocation[_saleId];
 	}
+
+	function getEstimatedAllocation(address _user, address _token, uint256 _totalSale, uint256 _saleId) external view override returns (uint256) {
+		return allocation[_saleId];
+	}
 }

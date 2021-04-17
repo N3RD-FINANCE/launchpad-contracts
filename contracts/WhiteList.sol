@@ -52,9 +52,9 @@ contract WhiteList is Ownable, IWhiteList {
     }
 
     function setWhitelistTimeFrame(uint256 _saleId, uint256[2] memory times) public onlyOwner {
-        (uint256 saleStart,) = launchpad.getSaleTimeFrame(_saleId);
+        (, uint256 saleEnd) = launchpad.getSaleTimeFrame(_saleId);
         require(times[0] < times[1], "invalid times");
-        require(times[1] < saleStart, "whitelist must finish before token sale start");
+        require(times[1] < saleEnd, "whitelist must finish before token sale ends");
         whitelistTimeFrame[_saleId] = times;
     }       
 

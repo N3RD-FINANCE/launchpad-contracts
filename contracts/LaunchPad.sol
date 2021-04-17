@@ -285,6 +285,10 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
         return allSales[_saleId].allocation.getAllocation(_user, _token, _totalSale, _saleId);
     }
 
+    function getEstimatedAllocation(address _user, address _token, uint256 _totalSale, uint256 _saleId) public view returns (uint256) {
+        return allSales[_saleId].allocation.getEstimatedAllocation(_user, _token, _totalSale, _saleId);
+    }
+
     function getUnlockableAmount(address _to, uint256 _saleId) public view returns (uint256) {
         uint256 ret = 0;
         UserInfo storage user = userInfo[_saleId][_to];

@@ -25,6 +25,20 @@ contract LinearAllocation is IAllocation, Ownable {
 		return userPoint.mul(_totalSale).div(total);
 	}
 
+	function getEstimatedAllocation(address _user, address _token, uint256 _totalSale, uint256 _saleId)
+        external
+        view
+		override
+        returns (uint256) {
+		(uint256 farmed, uint256 staked, uint256 total,) = whitelist.getUserSnapshotDetails(_saleId, _user);
+		
+		uint256 userPoint = farmed*2 + staked;
+		if (userPoint > whitelist.cappedNerdForWhitelist()) {
+            userPoint = whitelist.cappedNerdForWhitelist(); //capped at 100 nerd
+        }
+		return userPoint.mul(_totalSale).div(total);
+	}
+
 	IWhiteList whitelist;
 
 	function setWhiteListContract(address _addr) public onlyOwner {

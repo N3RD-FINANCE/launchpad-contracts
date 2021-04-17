@@ -226,6 +226,7 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
 
     function addVesting(uint256 _saleId, uint256 _percentX10) public onlyOwner {
         //only add vesting if sale finishes
+        require(block.timestamp > allSales[_saleId].saleEnd, "sale is not finished yet, dont know how much to distribute");
         require(_percentX10 <= 1000, "percent too high");
         uint256 _amount = allSales[_saleId].totalSold.mul(_percentX10).div(1000);
         

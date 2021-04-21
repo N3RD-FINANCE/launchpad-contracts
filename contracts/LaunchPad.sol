@@ -5,13 +5,14 @@ import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "./TokenTransfer.sol";
 import "./interfaces/IAllocation.sol";
+import "./interfaces/ILaunchPad.sol";
 import "./utils/ReentrancyGuard.sol";
 
 interface IDecimal {
     function decimals() external view returns (uint8);
 }
 
-contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
+contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard, ILaunchPad {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
 
@@ -108,28 +109,6 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
         allSales[_saleId].needWhitelist = _need;
     }
 
-    // function validateVestingConfig(
-    //     uint256 _unlockImmediatePercent,
-    //     uint256[] memory _vestingTimes,
-    //     uint256[] memory _vestingPercents
-    // ) internal {
-    //     require(
-    //         _vestingTimes.length == _vestingPercents.length,
-    //         "invalid vesting"
-    //     );
-    //     uint256 _totalPercent = _unlockImmediatePercent;
-    //     for (uint256 i = 0; i < _vestingTimes.length; i++) {
-    //         if (i > 0) {
-    //             require(
-    //                 _vestingTimes[i] > _vestingTimes[i - 1],
-    //                 "invalid vesting time"
-    //             );
-    //         }
-    //         _totalPercent = _totalPercent.add(_vestingPercents[i]);
-    //     }
-    //     require(_totalPercent == 100, "invalid vesting percent");
-    // }
-
     function createTokenSale(
         address _token,
         address payable _tokenOwner,
@@ -159,6 +138,7 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
         if (saleListForToken[_token].length == 1) {
             tokenList.push(_token);
         }
+        emit NewTokenSale(_token, _tokenOwner, _amount, _start, _end, _ethPegged, _tokenPrice);
     }
 
     function createTokenSaleWithAllocation(
@@ -179,7 +159,7 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
         external
         onlyOwner
     {
-        require(block.timestamp <= allSales[_saleId].saleEnd, "sale finish");
+        //require(block.timestamp <= allSales[_saleId].saleEnd, "sale finish");
         allSales[_saleId].totalSale = _totalSale;
     }
 
@@ -199,11 +179,11 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
         external
         onlyOwner
     {
-        require(allSales[_saleId].saleEnd < _end, "sale already finish");
-        require(
-            block.timestamp <= _end,
-            "cannot release before token sale end"
-        );
+        // require(allSales[_saleId].saleEnd < _end, "sale already finish");
+        // require(
+        //     block.timestamp <= _end,
+        //     "cannot release before token sale end"
+        // );
         allSales[_saleId].saleEnd = _end;
     }
 
@@ -280,6 +260,7 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
         allSales[_saleId].tokenOwner.transfer(actualSpent);
         user.bought = user.bought.add(calculatedAmount);
         allSales[_saleId].totalSold = allSales[_saleId].totalSold.add(calculatedAmount);
+        emit TokenBuy(msg.sender, actualSpent, calculatedAmount);
     }
 
 	function getAllocation(address _user, address _token, uint256 _totalSale, uint256 _saleId) public view returns (uint256) {
@@ -310,8 +291,10 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
             ret = ret.add(toUnlock);
             allSales[_saleId].vestingClaimeds[i] = allSales[_saleId].vestingClaimeds[i].add(toUnlock);
         }
+        uint256 claimFrom = user.vestingPaidCount;
         user.vestingPaidCount = allSales[_saleId].vestingAmounts.length;
         safeTransferOut(allSales[_saleId].token, _to, ret);
+        emit TokenClaim(msg.sender, _to, _saleId, claimFrom, user.vestingPaidCount.sub(1), ret);
     }
 
     function getSaleById(uint256 _saleId)
@@ -369,11 +352,11 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard {
         return allSales.length;
     }
 
-    function getSaleTokenByID(uint256 _saleId) external view returns (address) {
+    function getSaleTokenByID(uint256 _saleId) external view override returns (address) {
         return allSales[_saleId].token;
     }
 
-    function getSaleTimeFrame(uint256 _saleId) external view returns (uint256, uint256) {
+    function getSaleTimeFrame(uint256 _saleId) external view override returns (uint256, uint256) {
         return (allSales[_saleId].saleStart, allSales[_saleId].saleEnd);
     }
 

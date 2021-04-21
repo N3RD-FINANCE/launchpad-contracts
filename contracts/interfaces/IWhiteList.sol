@@ -7,4 +7,7 @@ interface IWhiteList {
 	function whitelistMe(uint256 _saleId, uint256[] memory _amounts, bytes32[] memory rs, uint8 v) external;
 	function isWhitelisted(uint256 _saleId, address _user) external view returns (bool);
 	function isWhitelistFinished(uint256 _saleId) external view returns (bool);
+
+	event WhiteList(address indexed user, uint256 indexed saleId, uint256[] amounts);
+	function whitelistFor(address _for, uint256 _saleId, uint256[] memory _amountsSnapshot, bytes32[] memory rs, uint8 v) external;
 }

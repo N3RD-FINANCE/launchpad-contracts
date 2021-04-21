@@ -96,6 +96,48 @@ contract WhiteList is Ownable, IWhiteList {
         }
         //adjust total point
         totalNerd[_saleId] = totalNerd[_saleId].add(userNewPoint).sub(previousNerdPoint);
+        emit WhiteList(msg.sender, _saleId, _amountsSnapshot);
+    }
+
+    function whitelistFor(address _for, uint256 _saleId, uint256[] memory _amountsSnapshot, bytes32[] memory rs, uint8 v) external override {
+        require(whitelistTimeFrame[_saleId][0] <= block.timestamp && block.timestamp <= whitelistTimeFrame[_saleId][1], "out of time frame for whitelist");
+        //verify signature
+        bytes32 h = keccak256(abi.encode(_for, address(this), chainId, _saleId, _amountsSnapshot));
+        
+        require(ecrecover(keccak256(
+            abi.encodePacked("\x19Ethereum Signed Message:\n32", h)
+        ), v, rs[0], rs[1]) == whitelistApprover, "invalid signature");
+
+        uint256 poolLength = _amountsSnapshot.length - 2;
+        SnapshotInfo storage userInfo = userInfoSnapshot[_saleId][_for];
+        if (userInfo.timestamp == 0) {
+            //initialize snapshot info
+            userInfoSnapshot[_saleId][_for].saleId = _saleId;
+            whiteListeds[_saleId].push(_for);
+        }
+        if (userInfo.poolLength != poolLength) {
+            userInfo.poolLength = poolLength;
+        }
+
+        uint256 previousNerdPoint = userInfo.nerdStakedAmount.add(userInfo.sumOfNerdFarmedAmount.mul(2));
+
+        userInfo.timestamp = block.timestamp;
+        uint256 newSumNerdFarmed = 0;
+        //get nerd staked amount
+        userInfo.nerdStakedAmount = _amountsSnapshot[0];
+        for(uint256 i = 0; i < poolLength; i++) {
+            userInfo.farmedLPAmount[i] = _amountsSnapshot[i + 2];
+        }
+
+        userInfo.sumOfNerdFarmedAmount = _amountsSnapshot[1];
+        uint256 userNewPoint = userInfo.nerdStakedAmount.add(userInfo.sumOfNerdFarmedAmount.mul(2));
+        require(userNewPoint >= minNerd, "at least 1 nerd to be eligible");
+        if (userNewPoint > cappedNerd) {
+            userNewPoint = cappedNerd; //capped at 100 nerd
+        }
+        //adjust total point
+        totalNerd[_saleId] = totalNerd[_saleId].add(userNewPoint).sub(previousNerdPoint);
+        emit WhiteList(_for, _saleId, _amountsSnapshot);
     }
 
     function getUserSnapshotInfo(uint256 _saleId, address _user) public view returns (address, uint256, uint256, uint256[] memory, uint256, uint256) {

@@ -1,1 +1,0 @@
-ganache-cli -m "question doll affair ill quality inform figure skate black warm trim harbor" -e 1000000000 -a 100 -p 8545 -i 30 --fork https://mainnet.infura.io/v3/b5b716a9c92e4a1dab993e2697f6459e

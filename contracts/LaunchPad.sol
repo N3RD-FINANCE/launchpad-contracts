@@ -297,6 +297,16 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard, ILaunchPad {
         emit TokenClaim(msg.sender, _to, _saleId, claimFrom, user.vestingPaidCount.sub(1), ret);
     }
 
+    //get total already claimed token amount
+    function getClaimedTokenAmount(uint256 _saleId, address _user) external view returns (uint256 ret) {
+        ret = 0;
+        UserInfo storage user = userInfo[_saleId][msg.sender];
+        for(uint256 i = 0; i < user.vestingPaidCount; i++) {
+            uint256 toUnlock = allSales[_saleId].vestingPercentsX10[i].mul(user.bought).div(1000);
+            ret = ret.add(toUnlock);
+        }
+    }
+
     function getSaleById(uint256 _saleId)
         external
         view

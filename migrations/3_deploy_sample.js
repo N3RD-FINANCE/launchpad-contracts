@@ -9,7 +9,7 @@ BN.config({ ROUNDING_MODE: BN.ROUND_DOWN })
 
 module.exports = function (deployer, network, accounts) {
   return deployer.then(async () => {
-    const token = await deployer.deploy(SampleERC20, "LaunchPad Test 1", "LPT1", accounts[0])
+    const token = await deployer.deploy(SampleERC20, "LaunchPad Test 2", "LPT2", accounts[0])
     console.log('token\'s address ', token.address)
   })
 }

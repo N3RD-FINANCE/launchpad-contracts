@@ -81,7 +81,6 @@ contract WhiteList is Ownable, IWhiteList {
         uint256 previousNerdPoint = userInfo.nerdStakedAmount.add(userInfo.sumOfNerdFarmedAmount.mul(2));
 
         userInfo.timestamp = block.timestamp;
-        uint256 newSumNerdFarmed = 0;
         //get nerd staked amount
         userInfo.nerdStakedAmount = _amountsSnapshot[0];
         for(uint256 i = 0; i < poolLength; i++) {
@@ -122,7 +121,6 @@ contract WhiteList is Ownable, IWhiteList {
         uint256 previousNerdPoint = userInfo.nerdStakedAmount.add(userInfo.sumOfNerdFarmedAmount.mul(2));
 
         userInfo.timestamp = block.timestamp;
-        uint256 newSumNerdFarmed = 0;
         //get nerd staked amount
         userInfo.nerdStakedAmount = _amountsSnapshot[0];
         for(uint256 i = 0; i < poolLength; i++) {

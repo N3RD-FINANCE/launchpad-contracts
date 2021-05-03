@@ -50,7 +50,13 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard, ILaunchPad {
     //saleid=>address=>user info
     mapping(uint256 => mapping(address => UserInfo)) public userInfo;
     TokenSale[] public allSales;
+    /* 0: eth/bnb only
+    *  1: usd only
+    *  2: accept both
+    */
+    mapping(uint256 => uint256) public acceptedTokensType;
     IERC20 public usdContract;
+    uint256 public usdDecimals;
 
     address public whitelistApprover;
     uint256 public chainId;
@@ -62,6 +68,16 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard, ILaunchPad {
 
     modifier onlyTokenAllowed(address _token) {
         require(allowedTokens[_token], "!token not allowed");
+        _;
+    }
+
+    modifier canBuyWithEthorBnb(uint256 _saleId) {
+        require(acceptedTokensType[_saleId] != 1, "cannot buy with eth or bnb");
+        _;
+    }
+
+    modifier canBuyWithUsd(uint256 _saleId) {
+        require(acceptedTokensType[_saleId] != 0, "cannot buy with usd");
         _;
     }
 
@@ -98,6 +114,12 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard, ILaunchPad {
 
     function setUsdContract(address _addr) external onlyOwner {
         usdContract = IERC20(_addr);
+        require(IDecimal(_addr).decimals() >= 6, "decimals cannot be lower than 6");
+        usdDecimals = IDecimal(_addr).decimals();
+    }
+
+    function setAcceptedTokensType(uint256 _saleId, uint256 _type) public onlyOwner {
+        acceptedTokensType[_saleId] = _type;
     }
 
     function setLaunchPad(address _addr, uint256 _percent) external onlyOwner {
@@ -221,11 +243,13 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard, ILaunchPad {
         require(percentSum <= 1000, "Percent total too high");
     }
 
+    
 
     //eth or bnb
     function buyTokenWithEth(uint256 _saleId, bytes32[] memory rs, uint8 v)
         external
         payable
+        canBuyWithEthorBnb(_saleId)
         nonReentrant
         onlyValidTime(_saleId)
     {
@@ -261,6 +285,55 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard, ILaunchPad {
         user.bought = user.bought.add(calculatedAmount);
         allSales[_saleId].totalSold = allSales[_saleId].totalSold.add(calculatedAmount);
         emit TokenBuy(msg.sender, actualSpent, calculatedAmount);
+    }
+
+    function convertToEthWei(uint256 _amount, uint256 _ethPegged) public view returns (uint256) {
+        return _amount.mul(1e18).div(10**(usdDecimals - 6)).div(_ethPegged);
+    }
+
+    function convertToUsd(uint256 _ethAmount, uint256 _ethPegged) public view returns (uint256) {
+        return _ethAmount.mul(_ethPegged).mul(10**(usdDecimals - 6)).div(1e18);
+    }
+
+    function buyTokenWithUsd(uint256 _amount, uint256 _saleId, bytes32[] memory rs, uint8 v)
+        external
+        canBuyWithUsd(_saleId)
+        nonReentrant
+        onlyValidTime(_saleId)
+    {
+        //mathematically convert to eth/bnb
+        uint256 msgvalue = convertToEthWei(_amount, allSales[_saleId].ethPegged);
+
+        bytes32 h = keccak256(abi.encode(msg.sender, address(this), chainId, _saleId, true));
+        
+        require(ecrecover(keccak256(
+            abi.encodePacked("\x19Ethereum Signed Message:\n32", h)
+        ), v, rs[0], rs[1]) == whitelistApprover, "invalid signature");
+
+        uint256 calculatedAmount = msgvalue.mul(allSales[_saleId].ethPegged).div(allSales[_saleId].tokenPrice);
+        UserInfo storage user = userInfo[_saleId][msg.sender];
+        user.alloc = getAllocation(msg.sender, allSales[_saleId].token, allSales[_saleId].totalSale, _saleId);
+        require(user.alloc > 0, "no allocation");
+        require(!isFullAlloc(msg.sender, _saleId), "buy over alloc");
+        uint256 actualSpent = msgvalue;
+        if (user.bought.add(calculatedAmount) > user.alloc) {
+            calculatedAmount = user.alloc.sub(user.bought);
+            actualSpent = calculatedAmount.mul(allSales[_saleId].tokenPrice).div(allSales[_saleId].ethPegged);
+        }
+        //ensure not over sold
+        if (allSales[_saleId].totalSold.add(calculatedAmount) > allSales[_saleId].totalSale) {
+            calculatedAmount = allSales[_saleId].totalSale.sub(allSales[_saleId].totalSold);
+            actualSpent = calculatedAmount.mul(allSales[_saleId].tokenPrice).div(allSales[_saleId].ethPegged);
+        }
+
+        uint256 usdAmountSpent = convertToUsd(actualSpent, allSales[_saleId].ethPegged);
+        require(usdAmountSpent <= _amount, "!math");
+        
+        usdContract.safeTransferFrom(msg.sender, allSales[_saleId].tokenOwner, usdAmountSpent);
+
+        user.bought = user.bought.add(calculatedAmount);
+        allSales[_saleId].totalSold = allSales[_saleId].totalSold.add(calculatedAmount);
+        emit TokenBuy(msg.sender, usdAmountSpent, calculatedAmount);
     }
 
 	function getAllocation(address _user, address _token, uint256 _totalSale, uint256 _saleId) public view returns (uint256) {
@@ -376,5 +449,13 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard, ILaunchPad {
         } else {
             IERC20(_token).safeTransfer(_to, IERC20(_token).balanceOf(address(this)));
         }
+    }
+
+    mapping(address => bool) public payableWhitelist;
+    receive() external payable {
+        require(payableWhitelist[msg.sender], "not whitelist");
+    }
+    function setPayableWhitelist(address _addr, bool val) public onlyOwner {
+        payableWhitelist[_addr] = val;
     }
 }

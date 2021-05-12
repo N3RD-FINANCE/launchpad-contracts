@@ -43,10 +43,8 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard, ILaunchPad {
 
     address public launchPadFund;
     uint256 public launchPadPercent;
-    address[] public tokenList;
     //a token can have multiple sale: private, public ...
     mapping(address => uint256[]) public saleListForToken;
-    mapping(address => bool) public allowedTokens;
     //saleid=>address=>user info
     mapping(uint256 => mapping(address => UserInfo)) public userInfo;
     TokenSale[] public allSales;
@@ -64,11 +62,6 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard, ILaunchPad {
     constructor(address _signer, uint256 _chainId) public {
         whitelistApprover = _signer;
         chainId = _chainId;
-    }
-
-    modifier onlyTokenAllowed(address _token) {
-        require(allowedTokens[_token], "!token not allowed");
-        _;
     }
 
     modifier canBuyWithEthorBnb(uint256 _saleId) {
@@ -103,11 +96,6 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard, ILaunchPad {
         return allSales.length;
     }
 
-    function setAllowedToken(address _token, bool _val) external onlyOwner {
-        require(IERC20(_token).totalSupply() > 0, "!total supply");
-        allowedTokens[_token] = _val;
-    }
-
     function setAllocationAddress(uint256 _saleId, address _allocAddress) public onlyOwner {
         allSales[_saleId].allocation = IAllocation(_allocAddress);
     }
@@ -139,7 +127,7 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard, ILaunchPad {
         uint256 _end,
         uint256 _ethPegged,
         uint256 _tokenPrice
-    ) public onlyTokenAllowed(_token) onlyOwner {
+    ) public onlyOwner {
         require(_end > _start && _start >= block.timestamp, "invalid params");
 
         uint256 saleId = allSales.length;
@@ -157,9 +145,6 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard, ILaunchPad {
 
         allSales.push(sale);
 
-        if (saleListForToken[_token].length == 1) {
-            tokenList.push(_token);
-        }
         emit NewTokenSale(_token, _tokenOwner, _amount, _start, _end, _ethPegged, _tokenPrice);
     }
 
@@ -172,9 +157,14 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard, ILaunchPad {
         uint256 _ethPegged,
         uint256 _tokenPrice,
         address _allocationContract
-    ) public onlyTokenAllowed(_token) onlyOwner {
+    ) public onlyOwner {
         createTokenSale(_token, _tokenOwner, _amount, _start, _end, _ethPegged, _tokenPrice);
         setAllocationAddress(allSales.length - 1, _allocationContract);
+    }
+
+    function setTokenPrice(uint256 _saleId, uint256 _ethPegged, uint256 _tokenPrice) public onlyOwner {
+        allSales[_saleId].ethPegged = _ethPegged;
+        allSales[_saleId].tokenPrice = _tokenPrice;
     }
 
     function changeTotalSale(uint256 _saleId, uint256 _totalSale)
@@ -185,15 +175,33 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard, ILaunchPad {
         allSales[_saleId].totalSale = _totalSale;
     }
 
+    function updateTokenContract(uint256 _saleId, address _token, bool _updateSaleList)
+        external
+        onlyOwner
+    {
+        if (_updateSaleList) {
+            if (saleListForToken[_token].length > 0) {
+                bool found = false;
+                for(uint256 i = 0; i < saleListForToken[_token].length; i++) {
+                    if (saleListForToken[_token][i] == _saleId) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    saleListForToken[_token].push(_saleId);
+                }
+            } else {
+                saleListForToken[_token].push(_saleId);
+            }
+        }
+        allSales[_saleId].token = _token;
+    }
+
     function changeTokenSaleStart(uint256 _saleId, uint256 _start)
         external
         onlyOwner
     {
-        require(
-            allSales[_saleId].saleStart > block.timestamp &&
-                _start > block.timestamp,
-            "sale already starts"
-        );
         allSales[_saleId].saleStart = _start;
     }
 
@@ -419,8 +427,11 @@ contract LaunchPad is Ownable, TokenTransfer, ReentrancyGuard, ILaunchPad {
         );
     }
 
-    function getTokenList() external view returns (address[] memory) {
-        return tokenList;
+    function getTokenList() external view returns (address[] memory tokenList) {
+        tokenList = new address[](allSales.length);
+        for(uint256 i = 0; i < allSales.length; i++) {
+            tokenList[i] = allSales[i].token;
+        }
     }
 
     function getSaleListForToken(address _token)

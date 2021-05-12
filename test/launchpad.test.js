@@ -25,7 +25,7 @@ contract('Launchpad Test', (accounts) => {
 	let fundRecipient = accounts[1];
 	let users = accounts.slice(2);
     beforeEach(async () => {
-		this.sample = await SampleERC20.new(deployer)
+		this.sample = await SampleERC20.new("Test", "test", deployer)
 		this.launchpad = await LaunchPad.new()
 		await this.launchpad.setAllowedToken(this.sample.address, {from: deployer});
 

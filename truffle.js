@@ -16,6 +16,7 @@ module.exports = {
       provider: () => new HDWalletProvider(process.env.PRIVATE_KEY, `https://kovan.infura.io/v3/${process.env.INFURA_APIKEY}`),
       network_id: 42,
       gas: 4600000,
+      gasPrice: utils.toWei('1', 'gwei'),
     },
     mainnet: {
       provider: () => new HDWalletProvider(process.env.PRIVATE_KEY, `https://mainnet.infura.io/v3/${process.env.INFURA_APIKEY}`),
